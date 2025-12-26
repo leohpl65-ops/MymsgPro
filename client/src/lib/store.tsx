@@ -20,17 +20,28 @@ export interface Message {
 export interface Chat {
   id: string;
   type: 'direct' | 'group';
-  name: string; // For groups, or the other user's name
+  name: string;
   avatar?: string;
   participants: string[];
   messages: Message[];
   lastMessage?: string;
   lastMessageTime?: number;
   wallpaper?: string;
+  userId?: string;
+}
+
+export interface Report {
+  id: string;
+  type: 'Usuario' | 'Grupo';
+  targetId: string;
+  targetName: string;
+  reporterId: string;
+  timestamp: number;
 }
 
 interface StoreContextType {
   currentUser: User | null;
+  isOnline: boolean;
   login: (name: string, id: string) => void;
   logout: () => void;
   chats: Chat[];
@@ -41,18 +52,22 @@ interface StoreContextType {
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
   updateGroup: (groupId: string, updates: Partial<Chat>) => void;
-  reports: { type: string; targetId: string; reporterId: string; timestamp: number }[];
-  reportEntity: (type: 'Usuario' | 'Grupo', targetId: string) => void;
+  reports: Report[];
+  reportEntity: (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => void;
   setChatWallpaper: (chatId: string, url: string) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-// --- Mock Data ---
-const MOCK_USERS: Record<string, User> = {
-  "12345670": { id: "12345670", name: "Admin", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Admin" },
-  "1001": { id: "1001", name: "Alice", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice" },
-  "1002": { id: "1002", name: "Bob", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob" },
+// --- Default Avatar Generator ---
+const getDefaultAvatar = (seed: string) => {
+  // Simple user icon placeholder with initials
+  const colors = ["#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
+  const hash = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const color = colors[hash % colors.length];
+  const initials = seed.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='${encodeURIComponent(color)}' width='100' height='100'/%3E%3Ctext x='50' y='50' font-size='40' fill='white' text-anchor='middle' dy='.3em' font-family='Arial'%3E${initials}%3C/text%3E%3C/svg%3E`;
 };
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -61,24 +76,58 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [chats, setChats] = useState<Chat[]>([
-    {
-      id: "group-1",
-      type: "group",
-      name: "General Chat",
-      avatar: "https://api.dicebear.com/7.x/identicon/svg?seed=General",
-      participants: ["12345670", "1001", "1002"],
-      messages: [
-        { id: "m1", senderId: "1001", text: "Hola a todos!", timestamp: Date.now() - 100000, type: "text" },
-        { id: "m2", senderId: "1002", text: "Bienvenidos a MyMsg Pro", timestamp: Date.now() - 90000, type: "text" }
-      ],
-      lastMessage: "Bienvenidos a MyMsg Pro",
-      lastMessageTime: Date.now() - 90000
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+
+  // Offline detection
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Load chats when user changes
+  useEffect(() => {
+    if (currentUser) {
+      const saved = localStorage.getItem(`mymsg_chats_${currentUser.id}`);
+      if (saved) {
+        setChats(JSON.parse(saved));
+      } else {
+        // First time login - start with empty
+        setChats([]);
+      }
+      
+      const savedReports = localStorage.getItem(`mymsg_reports_${currentUser.id}`);
+      if (savedReports) {
+        setReports(JSON.parse(savedReports));
+      }
     }
-  ]);
+  }, [currentUser]);
 
-  const [reports, setReports] = useState<{ type: string; targetId: string; reporterId: string; timestamp: number }[]>([]);
+  // Save chats when they change
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(`mymsg_chats_${currentUser.id}`, JSON.stringify(chats));
+    }
+  }, [chats, currentUser]);
 
+  // Save reports when they change
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(`mymsg_reports_${currentUser.id}`, JSON.stringify(reports));
+    }
+  }, [reports, currentUser]);
+
+  // Save user
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem("mymsg_user", JSON.stringify(currentUser));
@@ -88,14 +137,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   const login = (name: string, id: string) => {
-    const user = { id, name, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}` };
+    const user = { id, name, avatar: getDefaultAvatar(name) };
     setCurrentUser(user);
-    // In a real app, we'd fetch their chats here. 
-    // For mock, we'll just ensure they are in the demo group if not already
   };
 
   const logout = () => {
     setCurrentUser(null);
+    setChats([]);
   };
 
   const createGroup = (name: string) => {
@@ -104,11 +152,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       id: `group-${nanoid()}`,
       type: 'group',
       name,
-      avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${name}`,
+      avatar: getDefaultAvatar(name),
       participants: [currentUser.id],
       messages: [],
       lastMessage: "Grupo creado",
-      lastMessageTime: Date.now()
+      lastMessageTime: Date.now(),
+      userId: currentUser.id
     };
     setChats(prev => [newGroup, ...prev]);
   };
@@ -117,32 +166,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     const group = chats.find(c => c.id === groupId);
     if (group && !group.participants.includes(currentUser.id)) {
-       // Ideally we'd update the chat in the 'chats' array, but for this mock we just pretend success
-       // and maybe add it if it wasn't visible (but here all chats are visible for demo simplicity or we filter)
-       // Let's actually update it
-       setChats(prev => prev.map(c => 
-         c.id === groupId 
-           ? { ...c, participants: [...c.participants, currentUser.id] } 
-           : c
-       ));
+      setChats(prev => prev.map(c => 
+        c.id === groupId 
+          ? { ...c, participants: [...c.participants, currentUser.id] } 
+          : c
+      ));
     }
   };
 
   const addContact = (contactId: string) => {
     if (!currentUser) return;
-    // Check if chat already exists
     const existing = chats.find(c => c.type === 'direct' && c.participants.includes(contactId) && c.participants.includes(currentUser.id));
     if (existing) return;
 
-    const contactName = MOCK_USERS[contactId]?.name || `User ${contactId}`;
     const newChat: Chat = {
       id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
       type: 'direct',
-      name: contactName,
-      avatar: MOCK_USERS[contactId]?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${contactId}`,
+      name: `Usuario ${contactId}`,
+      avatar: getDefaultAvatar(contactId),
       participants: [currentUser.id, contactId],
       messages: [],
-      lastMessageTime: Date.now()
+      lastMessageTime: Date.now(),
+      userId: currentUser.id
     };
     setChats(prev => [newChat, ...prev]);
   };
@@ -182,23 +227,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChats(prev => prev.map(c => c.id === groupId ? { ...c, ...updates } : c));
   };
 
-  const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string) => {
+  const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
     if (!currentUser) return;
     setReports(prev => [...prev, {
+      id: nanoid(),
       type,
       targetId,
+      targetName,
       reporterId: currentUser.id,
       timestamp: Date.now()
     }]);
   };
 
   const setChatWallpaper = (chatId: string, url: string) => {
-     setChats(prev => prev.map(c => c.id === chatId ? { ...c, wallpaper: url } : c));
+    setChats(prev => prev.map(c => c.id === chatId ? { ...c, wallpaper: url } : c));
   };
 
   return (
     <StoreContext.Provider value={{
       currentUser,
+      isOnline,
       login,
       logout,
       chats,

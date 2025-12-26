@@ -2,17 +2,18 @@ import React, { useState, useRef, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useStore } from "@/lib/store";
 import { MobileLayout } from "@/components/mobile-layout";
+import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, MoreVertical, Flag, Wallpaper } from "lucide-react";
+import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, updateGroup } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
@@ -24,7 +25,6 @@ export default function ChatPage() {
 
   // Redirect if invalid chat
   if (!chat || !currentUser) {
-    // We wrap redirect in useEffect to avoid state update warning during render
     useEffect(() => { setLocation("/contacts"); }, []);
     return null;
   }
@@ -44,12 +44,9 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Mock upload - in real app we'd upload to server
-    // For audio vs image detection based on type
     const isAudio = file.type.startsWith('audio/');
     const isImage = file.type.startsWith('image/');
     
-    // Create a fake object URL
     const url = URL.createObjectURL(file);
     
     if (isAudio) sendMessage(chat.id, "Audio message", 'audio', url);
@@ -57,7 +54,6 @@ export default function ChatPage() {
   };
 
   const changeWallpaper = () => {
-    // Mock wallpaper change
     const wallpapers = [
        "https://images.unsplash.com/photo-1557683316-973673baf926?w=500&auto=format&fit=crop&q=60",
        "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=500&auto=format&fit=crop&q=60",
@@ -70,13 +66,15 @@ export default function ChatPage() {
 
   return (
     <MobileLayout>
+      <OfflineBanner />
+      
       {/* Header */}
       <header className="bg-card/80 backdrop-blur-md border-b flex items-center p-3 gap-3 sticky top-0 z-20">
         <Button size="icon" variant="ghost" className="shrink-0" onClick={() => setLocation("/contacts")}>
           <ArrowLeft className="h-6 w-6" />
         </Button>
         
-        <img src={chat.avatar} className="w-10 h-10 rounded-full border border-border" />
+        <img src={chat.avatar} className="w-10 h-10 rounded-full border border-border object-cover" />
         
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-sm truncate">{chat.name}</h2>
@@ -92,7 +90,7 @@ export default function ChatPage() {
 
       {/* Messages Area */}
       <div 
-        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100"
+        className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100 relative"
         style={{ 
           backgroundImage: chat.wallpaper ? `url(${chat.wallpaper})` : undefined,
           backgroundSize: 'cover',
@@ -192,7 +190,7 @@ export default function ChatPage() {
                </div>
              )}
 
-             <Button variant="destructive" className="w-full justify-start" onClick={() => { reportEntity(chat.type === 'group' ? 'Grupo' : 'Usuario', chat.id); setShowSettings(false); }}>
+             <Button variant="destructive" className="w-full justify-start" onClick={() => { reportEntity(chat.type === 'group' ? 'Grupo' : 'Usuario', chat.id, chat.name); setShowSettings(false); }}>
                <Flag className="mr-2 h-4 w-4" /> Reportar {chat.type === 'group' ? 'Grupo' : 'Usuario'}
              </Button>
            </div>
