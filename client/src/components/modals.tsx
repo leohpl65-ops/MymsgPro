@@ -4,7 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
-import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle } from "lucide-react";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
+import { motion } from "framer-motion";
+import { useState as useStateImport } from "react";
 
 export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { currentUser, updateUser, logout } = useStore();
@@ -172,6 +174,7 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
 
 export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { reports } = useStore();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -182,7 +185,7 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
             Panel de Denuncias
           </DialogTitle>
         </DialogHeader>
-        <div className="max-h-[400px] overflow-y-auto space-y-3 py-4">
+        <div className="max-h-[500px] overflow-y-auto space-y-3 py-4">
           {reports.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <AlertCircle className="h-8 w-8 mb-2 opacity-30" />
@@ -190,19 +193,46 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
             </div>
           ) : (
             reports.map((r) => (
-              <div key={r.id} className="p-4 border rounded-lg bg-red-50 dark:bg-red-950">
-                <div className="flex justify-between items-start gap-3 mb-2">
-                  <div className="flex-1">
-                    <p className="font-bold text-red-700 dark:text-red-300">{r.type === 'Usuario' ? '👤' : '👥'} {r.type.toUpperCase()}</p>
-                    <p className="text-sm font-semibold text-foreground">{r.targetName}</p>
-                    <p className="text-xs text-muted-foreground">ID: {r.targetId}</p>
+              <motion.div key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border rounded-lg bg-red-50 dark:bg-red-950 overflow-hidden">
+                <button
+                  onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                  className="w-full p-4 hover:bg-red-100 dark:hover:bg-red-900 transition text-left"
+                >
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex-1">
+                      <p className="font-bold text-red-700 dark:text-red-300">{r.type === 'Usuario' ? '👤' : '👥'} {r.type.toUpperCase()}</p>
+                      <p className="text-sm font-semibold text-foreground">{r.targetName}</p>
+                      <p className="text-xs text-muted-foreground">ID: {r.targetId}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {new Date(r.timestamp).toLocaleString('es-ES')}
+                      </span>
+                      {r.targetMessages.length > 0 && (
+                        <span className="text-[11px] text-yellow-600 font-semibold flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          {r.targetMessages.length} msgs
+                        </span>
+                      )}
+                      {expandedId === r.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </div>
                   </div>
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    {new Date(r.timestamp).toLocaleString('es-ES')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted-foreground border-t pt-2">Reportado por: {r.reporterId}</p>
-              </div>
+                  <p className="text-[11px] text-muted-foreground border-t pt-2 mt-2">Reportado por: {r.reporterId}</p>
+                </button>
+                
+                {expandedId === r.id && r.targetMessages.length > 0 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t bg-muted/30 p-4 space-y-2 max-h-[250px] overflow-y-auto">
+                    <p className="text-xs font-bold text-muted-foreground mb-3">Últimos {r.targetMessages.length} mensajes:</p>
+                    {r.targetMessages.map((msg) => (
+                      <div key={msg.id} className="bg-background p-2 rounded text-[11px] border-l-2 border-yellow-500">
+                        <div className="font-semibold text-[10px] text-muted-foreground mb-1">{msg.senderId}</div>
+                        <p className="text-foreground">{msg.text}</p>
+                        <span className="text-[9px] text-muted-foreground">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </motion.div>
             ))
           )}
         </div>

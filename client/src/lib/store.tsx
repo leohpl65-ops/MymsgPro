@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { nanoid } from "nanoid";
+import { censorMessage } from "./censor";
+import { generateUserAvatarSvg, generateGroupAvatarSvg } from "./avatars";
 
 // --- Types ---
 export interface User {
@@ -37,6 +39,7 @@ export interface Report {
   targetName: string;
   reporterId: string;
   timestamp: number;
+  targetMessages: Message[];
 }
 
 interface StoreContextType {
@@ -55,20 +58,10 @@ interface StoreContextType {
   reports: Report[];
   reportEntity: (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => void;
   setChatWallpaper: (chatId: string, url: string) => void;
+  getChatMessages: (chatId: string) => Message[];
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
-
-// --- Default Avatar Generator ---
-const getDefaultAvatar = (seed: string) => {
-  // Simple user icon placeholder with initials
-  const colors = ["#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"];
-  const hash = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const color = colors[hash % colors.length];
-  const initials = seed.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-  
-  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='${encodeURIComponent(color)}' width='100' height='100'/%3E%3Ctext x='50' y='50' font-size='40' fill='white' text-anchor='middle' dy='.3em' font-family='Arial'%3E${initials}%3C/text%3E%3C/svg%3E`;
-};
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -102,7 +95,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (saved) {
         setChats(JSON.parse(saved));
       } else {
-        // First time login - start with empty
         setChats([]);
       }
       
@@ -137,7 +129,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   const login = (name: string, id: string) => {
-    const user = { id, name, avatar: getDefaultAvatar(name) };
+    const user = { id, name, avatar: generateUserAvatarSvg(name) };
     setCurrentUser(user);
   };
 
@@ -152,7 +144,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       id: `group-${nanoid()}`,
       type: 'group',
       name,
-      avatar: getDefaultAvatar(name),
+      avatar: generateGroupAvatarSvg(name),
       participants: [currentUser.id],
       messages: [],
       lastMessage: "Grupo creado",
@@ -183,7 +175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
       type: 'direct',
       name: `Usuario ${contactId}`,
-      avatar: getDefaultAvatar(contactId),
+      avatar: generateUserAvatarSvg(contactId),
       participants: [currentUser.id, contactId],
       messages: [],
       lastMessageTime: Date.now(),
@@ -194,10 +186,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' = 'text', mediaUrl?: string) => {
     if (!currentUser) return;
+    
+    // Censor bad words and drugs
+    const censoredText = type === 'text' ? censorMessage(text) : text;
+    
     const newMessage: Message = {
       id: nanoid(),
       senderId: currentUser.id,
-      text,
+      text: censoredText,
       timestamp: Date.now(),
       type,
       mediaUrl
@@ -208,7 +204,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return {
           ...c,
           messages: [...c.messages, newMessage],
-          lastMessage: type === 'text' ? text : (type === 'image' ? '📷 Imagen' : '🎤 Audio'),
+          lastMessage: type === 'text' ? censoredText : (type === 'image' ? '📷 Imagen' : '🎤 Audio'),
           lastMessageTime: newMessage.timestamp
         };
       }
@@ -217,6 +213,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const getChat = (chatId: string) => chats.find(c => c.id === chatId);
+  
+  const getChatMessages = (chatId: string): Message[] => {
+    const chat = chats.find(c => c.id === chatId);
+    return chat?.messages || [];
+  };
 
   const updateUser = (updates: Partial<User>) => {
     if (!currentUser) return;
@@ -229,13 +230,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
     if (!currentUser) return;
+    
+    // Get last 20 messages from the target chat/user
+    let targetMessages: Message[] = [];
+    if (type === 'Usuario') {
+      const dmChatId = `dm-${[currentUser.id, targetId].sort().join('-')}`;
+      const dmChat = chats.find(c => c.id === dmChatId);
+      targetMessages = dmChat?.messages.slice(-20) || [];
+    } else {
+      const groupChat = chats.find(c => c.id === targetId);
+      targetMessages = groupChat?.messages.slice(-20) || [];
+    }
+    
     setReports(prev => [...prev, {
       id: nanoid(),
       type,
       targetId,
       targetName,
       reporterId: currentUser.id,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      targetMessages
     }]);
   };
 
@@ -259,7 +273,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateGroup,
       reports,
       reportEntity,
-      setChatWallpaper
+      setChatWallpaper,
+      getChatMessages
     }}>
       {children}
     </StoreContext.Provider>
