@@ -172,7 +172,7 @@ export default function ChatPage() {
 
       {/* Chat Settings Modal */}
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="sm:max-w-xs">
+        <DialogContent className="sm:max-w-xs" aria-describedby="chat-settings-dialog">
            <DialogHeader>
              <DialogTitle>Ajustes de Chat</DialogTitle>
            </DialogHeader>
