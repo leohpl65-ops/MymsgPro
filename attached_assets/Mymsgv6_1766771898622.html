@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MyMsg Pro - Leonardicho Full</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        :root { --primary: #004d99; --dark-header: #003366; --bg-page: #f4f7f9; --admin-gold: #d4af37; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: #0e1621; height: 100vh; display: flex; justify-content: center; overflow: hidden; }
+        #app { width: 100%; max-width: 500px; background: var(--bg-page); height: 100%; position: relative; display: flex; flex-direction: column; }
+        .screen { display: none; flex-direction: column; height: 100%; width: 100%; }
+        .active { display: flex; }
+        header { background: var(--dark-header); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+        header.admin-mode { background: #1a1a1a; border-bottom: 2px solid var(--admin-gold); }
+        .icon-btn { background: none; border: none; color: white; font-size: 22px; cursor: pointer; padding: 5px; }
+        .contact-item { padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 12px; cursor: pointer; background: white; }
+        .avatar { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background: #ccc; border: 1px solid #000; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; background-size: cover !important; background-position: center !important; }
+        .msg { padding: 10px; border-radius: 12px; max-width: 80%; box-shadow: 0 1px 2px rgba(0,0,0,0.1); word-wrap: break-word; background: white; }
+        .sent { background: #efffde; align-self: flex-end; }
+        .received { background: #ffffff; align-self: flex-start; }
+        .input-area { padding: 10px; background: #fff; display: flex; gap: 8px; align-items: center; border-top: 1px solid #ddd; }
+        #msgInput { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #ccc; font-size: 16px; outline: none; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; z-index: 5000; }
+        .modal-content { background: white; padding: 20px; border-radius: 15px; width: 85%; max-width: 380px; text-align: center; }
+        .btn-modal { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; margin-top: 10px; background: var(--primary); color: white; cursor: pointer; }
+        .btn-close { background: none; border: none; color: black; font-weight: bold; padding: 10px; cursor: pointer; width: 100%; margin-top: 5px; outline: none; }
+        .list-box { text-align: left; background: #eee; padding: 10px; border-radius: 8px; max-height: 150px; overflow-y: auto; margin: 10px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div id="screen-login" class="screen" style="justify-content:center; padding:30px; background:#1c2733;">
+        <h2 style="color:white; text-align:center; margin-bottom:30px;">MyMsg Pro</h2>
+        <input type="text" id="reg-name" style="width:100%; padding:15px; margin-bottom:15px; border-radius:10px;" placeholder="Nombre">
+        <input type="number" id="reg-id" style="width:100%; padding:15px; margin-bottom:20px; border-radius:10px;" placeholder="ID">
+        <button class="btn-modal" onclick="login()">ENTRAR</button>
+    </div>
+
+    <div id="screen-contacts" class="screen">
+        <header id="main-header">
+            <span>MyMsg Pro</span>
+            <div style="display:flex; gap:10px;">
+                <button class="icon-btn" onclick="openModal('modal-group-menu')">👥</button>
+                <button class="icon-btn" onclick="openModal('modal-add')">👤+</button>
+                <button class="icon-btn" onclick="openMainSettings()">⚙️</button>
+            </div>
+        </header>
+        <div id="contacts-list" style="flex:1; overflow-y:auto;"></div>
+    </div>
+
+    <div id="screen-chat" class="screen">
+        <header id="chat-header">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button onclick="backToMain()" class="icon-btn">←</button>
+                <img id="chat-pic" class="avatar" style="width:38px; height:38px;">
+                <span id="chat-title">...</span>
+            </div>
+            <button class="icon-btn" onclick="openSpecificSettings()">⚙️</button>
+        </header>
+        <div id="chat-messages" style="background: #d1d9e0;"></div>
+        <div class="input-area">
+            <button class="icon-btn" style="color:#555">😊</button>
+            <input type="text" id="msgInput" placeholder="Mensaje...">
+            <button class="icon-btn" style="color:#555" onclick="document.getElementById('audio-up').click()">🎙️</button>
+            <input type="file" id="audio-up" accept="audio/*" style="display:none" onchange="uploadAudio(this)">
+            <button class="icon-btn" id="send-btn-main" style="color:var(--primary)" onclick="handleSend()">➤</button>
+        </div>
+    </div>
+
+    <div id="modal-main-settings" class="modal"><div class="modal-content">
+        <h3>Mi Perfil</h3>
+        <img id="my-pic-view" class="avatar" style="width:70px; height:70px; margin:10px auto; display:block;" onclick="document.getElementById('p-file').click()">
+        <input type="file" id="p-file" style="display:none" onchange="changeMyPic(this)">
+        <input type="text" id="my-name-set" style="width:100%; padding:10px; margin:10px 0;" placeholder="Nombre">
+        <p>Mi ID: <b id="my-id-display"></b></p>
+        <div id="admin-panel" style="display:none; border:2px solid gold; padding:10px; margin:5px 0;">
+            <button class="btn-modal" style="background:gold; color:black" onclick="viewReports()">📂 PANEL DE DENUNCIAS</button>
+        </div>
+        <button class="btn-modal" onclick="saveMySettings()">Guardar</button>
+        <button class="btn-modal" style="background:red" onclick="logout()">Cerrar Sesión</button>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+
+    <div id="modal-chat-settings" class="modal"><div class="modal-content">
+        <h3>Ajustes de Chat</h3>
+        <p>ID Usuario: <b id="chat-user-id"></b></p>
+        <button class="btn-modal" style="background:#ffc107; color:black" onclick="document.getElementById('bg-file').click()">🖼️ CAMBIAR FONDO</button>
+        <input type="file" id="bg-file" style="display:none" onchange="changeChatBG(this)">
+        <button class="btn-modal" style="background:#dc3545" onclick="reportAction('Usuario')">🚩 REPORTAR USUARIO</button>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+
+    <div id="modal-group-settings" class="modal"><div class="modal-content">
+        <h3>Ajustes del Grupo</h3>
+        <p>ID Grupo: <b id="group-id-display"></b></p>
+        <div id="group-admin-tools" style="display:none">
+            <img id="g-pic-view" class="avatar" style="width:60px; height:60px; margin:10px auto; display:block;" onclick="document.getElementById('g-file-up').click()">
+            <input type="file" id="g-file-up" style="display:none" onchange="changeGroupPic(this)">
+            <input type="text" id="g-name-set" style="width:100%; padding:10px; margin:5px 0;" placeholder="Nombre del grupo">
+            <button class="btn-modal" onclick="saveGroupSettings()">Actualizar Datos</button>
+        </div>
+        <h4>Miembros:</h4>
+        <div id="group-members-list" class="list-box"></div>
+        <button class="btn-modal" style="background:#dc3545" onclick="reportAction('Grupo')">🚩 REPORTAR GRUPO</button>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+
+    <div id="modal-group-menu" class="modal"><div class="modal-content">
+        <h3>Grupos</h3>
+        <input type="text" id="new-g-name" style="width:100%; padding:10px;" placeholder="Nombre del grupo">
+        <button class="btn-modal" onclick="createGroup()">Crear</button>
+        <hr style="margin:10px 0">
+        <input type="text" id="join-g-id" style="width:100%; padding:10px;" placeholder="ID de Grupo">
+        <button class="btn-modal" style="background:green" onclick="joinGroup()">Unirme</button>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+
+    <div id="modal-add" class="modal"><div class="modal-content">
+        <h3>Añadir Amigo</h3>
+        <input type="number" id="friend-id" style="width:100%; padding:10px;" placeholder="ID Usuario">
+        <button class="btn-modal" onclick="addFriend()">Añadir</button>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+
+    <div id="modal-reports" class="modal"><div class="modal-content">
+        <h3>Denuncias</h3>
+        <div id="reports-list" class="list-box" style="max-height:300px"></div>
+        <button class="btn-close" onclick="closeModals()">Cerrar</button>
+    </div></div>
+</div>
+
+<script>
+    const firebaseConfig = { apiKey: "AIzaSyAzfoh8LHRqYM85ZCB_osh8gsARnBIysxs", databaseURL: "https://mymsg-d786b-default-rtdb.firebaseio.com", projectId: "mymsg-d786b" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const ADMIN_ID = "12345670";
+
+    let myUser = JSON.parse(localStorage.getItem('mymsg_user'));
+    let curChat = null, chatRef = null, isG = false;
+
+    if(myUser) { initApp(); } else { document.getElementById('screen-login').classList.add('active'); }
+
+    function login() {
+        const n = document.getElementById('reg-name').value, i = document.getElementById('reg-id').value;
+        if(n && i) {
+            myUser = { name: n, id: i, pic: "" };
+            localStorage.setItem('mymsg_user', JSON.stringify(myUser));
+            db.ref('users/'+i).update(myUser);
+            location.reload();
+        }
+    }
+
+    function initApp() {
+        if(myUser.id === ADMIN_ID) { document.querySelectorAll('header').forEach(h => h.classList.add('admin-mode')); }
+        showScreen('screen-contacts');
+        loadContacts();
+        console.log("Simple Gui Activated");
+    }
+
+    function loadContacts() {
+        const list = document.getElementById('contacts-list');
+        db.ref('users/'+myUser.id+'/contacts').on('value', snap => {
+            list.innerHTML = "";
+            snap.forEach(c => {
+                const info = c.val();
+                db.ref((info.g?'groups/':'users/')+info.id).once('value', s => {
+                    if(s.exists()){
+                        const it = s.val();
+                        const div = document.createElement('div'); div.className = 'contact-item';
+                        div.innerHTML = `<img src="${it.pic||'https://cdn-icons-png.flaticon.com/512/149/149071.png'}" class="avatar"><div><b>${it.name}</b><br><small>ID: ${it.id}</small></div>`;
+                        div.onclick = () => openChat(it.id, it.name, it.pic, !!info.g);
+                        list.appendChild(div);
+                    }
+                });
+            });
+        });
+    }
+
+    function openChat(id, name, pic, g) {
+        if(chatRef) chatRef.off();
+        curChat = id; isG = g; showScreen('screen-chat');
+        document.getElementById('chat-title').innerText = name;
+        document.getElementById('chat-pic').src = pic||(g?'https://cdn-icons-png.flaticon.com/512/615/615075.png':'https://cdn-icons-png.flaticon.com/512/149/149071.png');
+        
+        // Cargar Fondo Personalizado si existe localmente para este chat
+        const localBG = localStorage.getItem('bg_'+curChat);
+        document.getElementById('chat-messages').style.background = localBG ? `url(${localBG})` : "#d1d9e0";
+
+        const path = g ? `group_msgs/${id}` : `chats/${[myUser.id, id].sort().join("_")}`;
+        chatRef = db.ref(path);
+        chatRef.on('value', snap => {
+            const box = document.getElementById('chat-messages'); box.innerHTML = "";
+            snap.forEach(m => {
+                const d = m.val();
+                box.innerHTML += `<div class="msg ${d.s===myUser.id?'sent':'received'}">
+                    <b>${d.n}</b><br>${d.t} ${d.audio ? `<br><audio controls src="${d.audio}"></audio>` : ''}
+                </div>`;
+            });
+            box.scrollTop = box.scrollHeight;
+        });
+    }
+
+    function handleSend() {
+        const inp = document.getElementById('msgInput');
+        if(inp.value.trim() && chatRef) {
+            chatRef.push({s: myUser.id, n: myUser.name, t: inp.value.trim()});
+            inp.value = "";
+        }
+    }
+
+    // --- CONFIGURACIONES ---
+    function openMainSettings() {
+        document.getElementById('my-id-display').innerText = myUser.id;
+        document.getElementById('my-name-set').value = myUser.name;
+        document.getElementById('my-pic-view').src = myUser.pic || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+        document.getElementById('admin-panel').style.display = (myUser.id === ADMIN_ID) ? 'block' : 'none';
+        openModal('modal-main-settings');
+    }
+
+    function openSpecificSettings() {
+        if(isG) {
+            document.getElementById('group-id-display').innerText = curChat;
+            db.ref('groups/'+curChat).once('value', s => {
+                const data = s.val();
+                document.getElementById('g-name-set').value = data.name;
+                document.getElementById('g-pic-view').src = data.pic || 'https://cdn-icons-png.flaticon.com/512/615/615075.png';
+                // Solo el owner (el que lo creó o Leonardicho) puede editar
+                document.getElementById('group-admin-tools').style.display = (data.owner === myUser.id || myUser.id === ADMIN_ID) ? 'block' : 'none';
+            });
+            // Cargar lista de miembros (simulada por los contactos que tienen este grupo)
+            document.getElementById('group-members-list').innerText = "Cargando miembros...";
+            db.ref('groups/'+curChat+'/members').once('value', snap => {
+                let list = ""; snap.forEach(m => { list += "• " + m.val().name + "\n"; });
+                document.getElementById('group-members-list').innerText = list || "Solo tú";
+            });
+            openModal('modal-group-settings');
+        } else {
+            document.getElementById('chat-user-id').innerText = curChat;
+            openModal('modal-chat-settings');
+        }
+    }
+
+    function changeChatBG(f) {
+        const r = new FileReader(); r.onload = e => {
+            localStorage.setItem('bg_'+curChat, e.target.result);
+            document.getElementById('chat-messages').style.background = `url(${e.target.result})`;
+            closeModals();
+        }; r.readAsDataURL(f.files[0]);
+    }
+
+    function reportAction(type) {
+        db.ref('reports_admin').push({ type, target_id: curChat, target_name: document.getElementById('chat-title').innerText, reporter: myUser.name });
+        alert(type + " reportado a Leonardicho.");
+        closeModals();
+    }
+
+    function saveMySettings() {
+        myUser.name = document.getElementById('my-name-set').value;
+        db.ref('users/'+myUser.id).update({name: myUser.name});
+        localStorage.setItem('mymsg_user', JSON.stringify(myUser));
+        closeModals(); loadContacts();
+    }
+
+    function changeMyPic(f) {
+        const r = new FileReader(); r.onload = e => {
+            myUser.pic = e.target.result;
+            db.ref('users/'+myUser.id).update({pic: myUser.pic});
+            document.getElementById('my-pic-view').src = myUser.pic;
+            localStorage.setItem('mymsg_user', JSON.stringify(myUser));
+        }; r.readAsDataURL(f.files[0]);
+    }
+
+    function saveGroupSettings() {
+        const n = document.getElementById('g-name-set').value;
+        db.ref('groups/'+curChat).update({name: n});
+        document.getElementById('chat-title').innerText = n;
+        closeModals();
+    }
+
+    function changeGroupPic(f) {
+        const r = new FileReader(); r.onload = e => {
+            db.ref('groups/'+curChat).update({pic: e.target.result});
+            document.getElementById('g-pic-view').src = e.target.result;
+            document.getElementById('chat-pic').src = e.target.result;
+        }; r.readAsDataURL(f.files[0]);
+    }
+
+    function createGroup() {
+        const n = document.getElementById('new-g-name').value, id = "G"+Math.floor(Math.random()*9999);
+        if(n) {
+            db.ref('groups/'+id).set({id, name:n, g:true, owner: myUser.id});
+            db.ref('groups/'+id+'/members/'+myUser.id).set({name: myUser.name});
+            db.ref('users/'+myUser.id+'/contacts/'+id).set({id, g:true});
+            closeModals();
+        }
+    }
+
+    function joinGroup() {
+        const id = document.getElementById('join-g-id').value;
+        db.ref('groups/'+id).once('value', s => {
+            if(s.exists()){
+                db.ref('users/'+myUser.id+'/contacts/'+id).set({id, g:true});
+                db.ref('groups/'+id+'/members/'+myUser.id).set({name: myUser.name});
+                closeModals();
+            } else { alert("Grupo no existe"); }
+        });
+    }
+
+    function addFriend() {
+        const id = document.getElementById('friend-id').value;
+        db.ref('users/'+id).once('value', s => {
+            if(s.exists()){ db.ref('users/'+myUser.id+'/contacts/'+id).set({id, g:false}); closeModals(); }
+        });
+    }
+
+    function uploadAudio(f) {
+        const r = new FileReader(); r.onload = e => {
+            chatRef.push({s: myUser.id, n: myUser.name, t: "(Audio)", audio: e.target.result});
+        }; r.readAsDataURL(f.files[0]);
+    }
+
+    function viewReports() {
+        const box = document.getElementById('reports-list'); box.innerHTML = "Cargando...";
+        db.ref('reports_admin').once('value', snap => {
+            box.innerHTML = "";
+            snap.forEach(r => {
+                const d = r.val();
+                box.innerHTML += `<div style="border-bottom:1px solid #999; padding:5px;">
+                    <b>${d.type}:</b> ${d.target_name} (${d.target_id})<br>Reportado por: ${d.reporter}
+                </div>`;
+            });
+            openModal('modal-reports');
+        });
+    }
+
+    function logout() { localStorage.clear(); location.reload(); }
+    function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModals() { document.querySelectorAll('.modal').forEach(m => m.style.display='none'); }
+    function backToMain() { if(chatRef) chatRef.off(); showScreen('screen-contacts'); }
+</script>
+</body>
+</html>
