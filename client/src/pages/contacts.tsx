@@ -2,13 +2,14 @@ import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { useStore } from "@/lib/store";
 import { MobileLayout } from "@/components/mobile-layout";
+import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
-import { Users, UserPlus, Settings, UserCircle, MessageSquare } from "lucide-react";
+import { Users, UserPlus, Settings, MessageSquare, ShieldAlert } from "lucide-react";
 import { UserSettingsModal, GroupMenuModal, AddFriendModal, ReportsModal } from "@/components/modals";
 import { motion } from "framer-motion";
 
 export default function ContactsPage() {
-  const { currentUser, chats } = useStore();
+  const { currentUser, chats, isOnline } = useStore();
   const [, setLocation] = useLocation();
   
   const [showSettings, setShowSettings] = useState(false);
@@ -17,8 +18,13 @@ export default function ContactsPage() {
   const [showReports, setShowReports] = useState(false);
 
   // Redirect if not logged in
+  React.useEffect(() => {
+    if (!currentUser) {
+      setLocation("/");
+    }
+  }, [currentUser, setLocation]);
+
   if (!currentUser) {
-    setLocation("/");
     return null;
   }
 
@@ -27,6 +33,8 @@ export default function ContactsPage() {
 
   return (
     <MobileLayout>
+      <OfflineBanner />
+      
       {/* Header */}
       <header className={`p-4 flex justify-between items-center shadow-sm z-10 ${isAdmin ? 'bg-slate-900 text-white border-b-2 border-yellow-500' : 'bg-primary text-primary-foreground'}`}>
         <h1 className="font-bold text-lg tracking-tight">MyMsg Pro</h1>
@@ -97,6 +105,3 @@ export default function ContactsPage() {
     </MobileLayout>
   );
 }
-
-// Importing helper icon for admin check
-import { ShieldAlert } from "lucide-react";

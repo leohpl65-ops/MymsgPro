@@ -1,23 +1,36 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
-import { User, LogOut, FileText, Settings, ShieldAlert, Image as ImageIcon } from "lucide-react";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle } from "lucide-react";
 
 export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { currentUser, updateUser, logout } = useStore();
   const [name, setName] = useState(currentUser?.name || "");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
     updateUser({ name });
     onOpenChange(false);
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      updateUser({ avatar: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs">
+      <DialogContent className="sm:max-w-xs" aria-describedby="profile-dialog">
         <DialogHeader>
           <DialogTitle>Mi Perfil</DialogTitle>
         </DialogHeader>
@@ -25,12 +38,20 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
           <div className="relative">
             <img 
               src={currentUser?.avatar} 
-              className="w-20 h-20 rounded-full border-2 border-border" 
+              className="w-20 h-20 rounded-full border-2 border-primary object-cover cursor-pointer hover:opacity-80 transition" 
               alt="Avatar"
+              onClick={() => fileInputRef.current?.click()}
             />
-            <Button size="icon" variant="secondary" className="absolute bottom-0 right-0 h-6 w-6 rounded-full">
+            <Button size="icon" variant="secondary" className="absolute bottom-0 right-0 h-6 w-6 rounded-full" onClick={() => fileInputRef.current?.click()}>
               <ImageIcon className="h-3 w-3" />
             </Button>
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleAvatarChange}
+            />
           </div>
           <div className="w-full space-y-2">
             <Label>Nombre</Label>
@@ -44,6 +65,10 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
           <Button variant="destructive" onClick={logout} className="w-full">
             <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
           </Button>
+          
+          <div className="w-full pt-4 border-t text-center">
+            <p className="text-xs text-blue-600 font-semibold">Derechos a Leonardo Humaza Poiqui</p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -57,7 +82,7 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs">
+      <DialogContent className="sm:max-w-xs" aria-describedby="groups-dialog">
         <DialogHeader>
           <DialogTitle>Grupos</DialogTitle>
         </DialogHeader>
@@ -70,7 +95,13 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
               />
-              <Button onClick={() => { createGroup(newGroupName); onOpenChange(false); }}>Crear</Button>
+              <Button onClick={() => { 
+                if (newGroupName.trim()) {
+                  createGroup(newGroupName);
+                  setNewGroupName("");
+                  onOpenChange(false);
+                }
+              }}>Crear</Button>
             </div>
           </div>
           <div className="relative">
@@ -89,7 +120,13 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
                 value={joinGroupId}
                 onChange={(e) => setJoinGroupId(e.target.value)}
               />
-              <Button variant="outline" onClick={() => { joinGroup(joinGroupId); onOpenChange(false); }}>Unirme</Button>
+              <Button variant="outline" onClick={() => { 
+                if (joinGroupId.trim()) {
+                  joinGroup(joinGroupId);
+                  setJoinGroupId("");
+                  onOpenChange(false);
+                }
+              }}>Unirme</Button>
             </div>
           </div>
         </div>
@@ -104,7 +141,7 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs">
+      <DialogContent className="sm:max-w-xs" aria-describedby="add-friend-dialog">
         <DialogHeader>
           <DialogTitle>Añadir Amigo</DialogTitle>
         </DialogHeader>
@@ -112,13 +149,19 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
           <div className="space-y-2">
             <Label>ID de Usuario</Label>
             <Input 
-              type="number" 
+              type="text" 
               placeholder="Ej: 1002" 
               value={friendId}
               onChange={(e) => setFriendId(e.target.value)}
             />
           </div>
-          <Button className="w-full" onClick={() => { addContact(friendId); onOpenChange(false); }}>
+          <Button className="w-full" onClick={() => { 
+            if (friendId.trim()) {
+              addContact(friendId);
+              setFriendId("");
+              onOpenChange(false);
+            }
+          }}>
             Añadir Contacto
           </Button>
         </div>
@@ -132,22 +175,33 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby="reports-dialog">
         <DialogHeader>
-          <DialogTitle>Panel de Denuncias</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-yellow-600" />
+            Panel de Denuncias
+          </DialogTitle>
         </DialogHeader>
-        <div className="max-h-[300px] overflow-y-auto space-y-2">
+        <div className="max-h-[400px] overflow-y-auto space-y-3 py-4">
           {reports.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No hay denuncias registradas.</p>
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <AlertCircle className="h-8 w-8 mb-2 opacity-30" />
+              <p className="text-sm text-center">No hay denuncias registradas.</p>
+            </div>
           ) : (
-            reports.map((r, i) => (
-              <div key={i} className="p-3 border rounded-md bg-muted/50 text-sm">
-                <div className="flex justify-between font-bold">
-                  <span className="text-destructive">{r.type.toUpperCase()}</span>
-                  <span className="text-xs text-muted-foreground">{new Date(r.timestamp).toLocaleString()}</span>
+            reports.map((r) => (
+              <div key={r.id} className="p-4 border rounded-lg bg-red-50 dark:bg-red-950">
+                <div className="flex justify-between items-start gap-3 mb-2">
+                  <div className="flex-1">
+                    <p className="font-bold text-red-700 dark:text-red-300">{r.type === 'Usuario' ? '👤' : '👥'} {r.type.toUpperCase()}</p>
+                    <p className="text-sm font-semibold text-foreground">{r.targetName}</p>
+                    <p className="text-xs text-muted-foreground">ID: {r.targetId}</p>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    {new Date(r.timestamp).toLocaleString('es-ES')}
+                  </span>
                 </div>
-                <div>Target ID: {r.targetId}</div>
-                <div className="text-xs text-muted-foreground">Reportado por: {r.reporterId}</div>
+                <p className="text-[11px] text-muted-foreground border-t pt-2">Reportado por: {r.reporterId}</p>
               </div>
             ))
           )}
