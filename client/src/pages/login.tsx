@@ -9,7 +9,7 @@ import { MessageCircle, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 
 const ADMIN_ID = "12345670";
-const ADMIN_PASSWORD = "13245673";
+const ADMIN_PASSWORD = "1324567";
 
 export default function LoginPage() {
   const { login, currentUser, verifyPassword } = useStore();

@@ -14,6 +14,19 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
+    const lowerName = name.toLowerCase();
+    if (lowerName === 'owner') {
+      alert("No te puedes poner ese nombre");
+      return;
+    }
+    
+    // Check for inappropriate content
+    const reservedNames = ['owner', 'admin', 'administrador', 'root', 'system'];
+    if (reservedNames.includes(lowerName)) {
+      alert("No te puedes poner ese nombre");
+      return;
+    }
+    
     updateUser({ name });
     onOpenChange(false);
   };

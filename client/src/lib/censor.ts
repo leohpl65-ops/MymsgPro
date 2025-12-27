@@ -22,14 +22,16 @@ export function censorMessage(text: string): string {
   
   ALL_BANNED_WORDS.forEach(word => {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    censored = censored.replace(regex, '###');
+    censored = censored.replace(regex, '####');
   });
   
   return censored;
 }
 
 export function containsBannedWord(text: string): boolean {
-  return ALL_BANNED_WORDS.some(word => 
+  const reservedNames = ['owner', 'admin', 'administrador', 'root', 'system'];
+  const allBanned = [...ALL_BANNED_WORDS, ...reservedNames];
+  return allBanned.some(word => 
     new RegExp(`\\b${word}\\b`, 'i').test(text)
   );
 }

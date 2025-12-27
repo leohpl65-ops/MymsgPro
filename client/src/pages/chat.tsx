@@ -6,7 +6,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper } from "lucide-react";
+import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +20,13 @@ export default function ChatPage() {
   
   const [inputText, setInputText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const micPressRef = useRef<NodeJS.Timeout | null>(null);
 
   // Redirect if invalid chat
   if (!chat || !currentUser) {
@@ -55,9 +60,14 @@ export default function ChatPage() {
 
   const changeWallpaper = () => {
     const wallpapers = [
-       "https://images.unsplash.com/photo-1557683316-973673baf926?w=500&auto=format&fit=crop&q=60",
-       "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=500&auto=format&fit=crop&q=60",
-       "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=500&auto=format&fit=crop&q=60"
+       "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+       "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+       "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+       "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+       "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+       "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
+       "linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)",
+       "linear-gradient(135deg, #ff9a56 0%, #ff6a88 100%)"
     ];
     const random = wallpapers[Math.floor(Math.random() * wallpapers.length)];
     setChatWallpaper(chat.id, random);
@@ -92,7 +102,7 @@ export default function ChatPage() {
       <div 
         className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100 relative"
         style={{ 
-          backgroundImage: chat.wallpaper ? `url(${chat.wallpaper})` : undefined,
+          background: chat.wallpaper && chat.wallpaper.includes('gradient') ? chat.wallpaper : (chat.wallpaper ? `url(${chat.wallpaper})` : undefined),
           backgroundSize: 'cover',
           backgroundPosition: 'center'
         }}
@@ -104,17 +114,33 @@ export default function ChatPage() {
         <div className="relative z-10 flex flex-col gap-2 pb-2">
           {chat.messages.map((msg, idx) => {
             const isMe = msg.senderId === currentUser.id;
+            const longPressRef = useRef<NodeJS.Timeout | null>(null);
+            
+            const handleMouseDown = () => {
+              longPressRef.current = setTimeout(() => setSelectedMessage(msg.id), 500);
+            };
+            
+            const handleMouseUp = () => {
+              if (longPressRef.current) clearTimeout(longPressRef.current);
+            };
+            
             return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2 shadow-sm text-sm break-words",
+                  "max-w-[80%] rounded-2xl px-4 py-2 shadow-sm text-sm break-words relative cursor-pointer hover:opacity-80 transition",
                   isMe 
                     ? "bg-primary text-primary-foreground self-end rounded-br-none" 
                     : "bg-white text-foreground self-start rounded-bl-none"
                 )}
+                onContextMenu={(e) => { e.preventDefault(); setSelectedMessage(msg.id); }}
+                onMouseDown={handleMouseDown}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onTouchStart={handleMouseDown}
+                onTouchEnd={handleMouseUp}
               >
                 {!isMe && chat.type === 'group' && (
                   <p className="text-[10px] font-bold opacity-70 mb-1">{msg.senderId}</p>
@@ -140,9 +166,53 @@ export default function ChatPage() {
         </div>
       </div>
 
+      {/* Emoji Picker */}
+      {showEmojiPicker && (
+        <div className="absolute bottom-20 left-3 bg-white border rounded-lg shadow-lg p-3 z-50">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs font-semibold">Emojis</span>
+            <Button size="sm" variant="ghost" onClick={() => setShowEmojiPicker(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-6 gap-2">
+            {['😀', '😂', '😍', '🤔', '😢', '🎉', '🔥', '💯', '👍', '👎', '💔', '😱'].map((emoji) => (
+              <button key={emoji} className="text-2xl hover:scale-110 transition" onClick={() => { setInputText(inputText + emoji); setShowEmojiPicker(false); }}>
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Message Actions Menu */}
+      {selectedMessage && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="fixed inset-0 z-40 flex items-center justify-center p-4"
+          onClick={() => setSelectedMessage(null)}
+        >
+          <div className="bg-white rounded-lg shadow-xl p-2 space-y-1 relative" onClick={(e) => e.stopPropagation()}>
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => setSelectedMessage(null)}>
+              <X className="h-4 w-4 mr-2" /> Cerrar
+            </Button>
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm">
+              <Share2 className="h-4 w-4 mr-2" /> Reenviar
+            </Button>
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm">
+              <Reply className="h-4 w-4 mr-2" /> Responder
+            </Button>
+            <Button size="sm" variant="destructive" className="w-full justify-start text-sm">
+              <RotateCcw className="h-4 w-4 mr-2" /> Eliminar
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
       {/* Input Area */}
       <div className="bg-background p-3 border-t flex items-end gap-2 sticky bottom-0 z-20">
-        <Button size="icon" variant="ghost" className="text-muted-foreground shrink-0 rounded-full">
+        <Button size="icon" variant="ghost" className="text-muted-foreground shrink-0 rounded-full relative" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
           <Smile className="h-6 w-6" />
         </Button>
         
@@ -163,7 +233,31 @@ export default function ChatPage() {
         ) : (
           <>
              <input type="file" ref={fileInputRef} className="hidden" accept="image/*,audio/*" onChange={handleFileUpload} />
-             <Button size="icon" variant="ghost" className="text-muted-foreground shrink-0" onClick={() => fileInputRef.current?.click()}>
+             <Button 
+               size="icon" 
+               variant="ghost" 
+               className={cn("text-muted-foreground shrink-0", isRecording && "bg-red-500/20 text-red-600")}
+               onMouseDown={() => {
+                 setIsRecording(true);
+                 micPressRef.current = setTimeout(() => {
+                   fileInputRef.current?.click();
+                 }, 500);
+               }}
+               onMouseUp={() => {
+                 setIsRecording(false);
+                 if (micPressRef.current) clearTimeout(micPressRef.current);
+               }}
+               onTouchStart={() => {
+                 setIsRecording(true);
+                 micPressRef.current = setTimeout(() => {
+                   fileInputRef.current?.click();
+                 }, 500);
+               }}
+               onTouchEnd={() => {
+                 setIsRecording(false);
+                 if (micPressRef.current) clearTimeout(micPressRef.current);
+               }}
+             >
                <Mic className="h-6 w-6" />
              </Button>
           </>
@@ -181,11 +275,15 @@ export default function ChatPage() {
                <Wallpaper className="mr-2 h-4 w-4" /> Cambiar Fondo
              </Button>
              
+             <div className="p-3 bg-slate-50 rounded-md text-sm border">
+               <p className="text-xs font-semibold text-muted-foreground mb-2">ID: <span className="font-mono text-foreground">{chat.id.replace('dm-', '').replace('group-', '')}</span></p>
+             </div>
+             
              {chat.type === 'group' && (
                <div className="p-3 bg-muted rounded-md text-sm">
                  <p className="font-semibold mb-2">Miembros:</p>
-                 <ul className="list-disc pl-4 space-y-1">
-                   {chat.participants.map(p => <li key={p}>{p}</li>)}
+                 <ul className="space-y-2">
+                   {chat.participants.map(p => <li key={p} className="text-sm"><span className="font-semibold">{p === 'mymsgai' ? 'MymsgAI' : p}</span><br/><span className="text-xs text-muted-foreground">{p}</span></li>)}
                  </ul>
                </div>
              )}

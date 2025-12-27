@@ -94,11 +94,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Load chats when user changes
   useEffect(() => {
     if (currentUser) {
+      const isFirstLogin = !localStorage.getItem(`mymsg_chats_${currentUser.id}`);
       const saved = localStorage.getItem(`mymsg_chats_${currentUser.id}`);
       if (saved) {
         setChats(JSON.parse(saved));
       } else {
         setChats([]);
+        // Add MymsgAI on first login
+        if (isFirstLogin) {
+          setTimeout(() => {
+            setChats(prev => {
+              const newChat: Chat = {
+                id: `dm-${[currentUser.id, 'mymsgai'].sort().join('-')}`,
+                type: 'direct',
+                name: "MymsgAI",
+                avatar: generateUserAvatarSvg("MymsgAI"),
+                participants: [currentUser.id, 'mymsgai'],
+                messages: [],
+                lastMessageTime: Date.now(),
+                userId: currentUser.id
+              };
+              return [newChat, ...prev];
+            });
+          }, 0);
+        }
       }
       
       const savedReports = localStorage.getItem(`mymsg_reports_${currentUser.id}`);
@@ -135,15 +154,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const login = (name: string, id: string, password: string) => {
     const user = { id, name, password, avatar: generateUserAvatarSvg(name) };
     setCurrentUser(user);
-    
-    // Check if this is first login
-    const isFirstLogin = !localStorage.getItem(`mymsg_user_${id}`);
-    if (isFirstLogin) {
-      // Add MymsgAI as default contact
-      setTimeout(() => {
-        addContact("mymsgai", "MymsgAI");
-      }, 0);
-    }
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
