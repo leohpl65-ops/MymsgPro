@@ -52,7 +52,7 @@ interface StoreContextType {
   chats: Chat[];
   createGroup: (name: string) => void;
   joinGroup: (groupId: string) => void;
-  addContact: (contactId: string) => void;
+  addContact: (contactId: string, contactName: string) => boolean;
   sendMessage: (chatId: string, text: string, type?: 'text' | 'image' | 'audio', mediaUrl?: string) => void;
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
@@ -61,6 +61,7 @@ interface StoreContextType {
   reportEntity: (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => void;
   setChatWallpaper: (chatId: string, url: string) => void;
   getChatMessages: (chatId: string) => Message[];
+  getAllUsers: () => Map<string, User>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -134,6 +135,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const login = (name: string, id: string, password: string) => {
     const user = { id, name, password, avatar: generateUserAvatarSvg(name) };
     setCurrentUser(user);
+    
+    // Check if this is first login
+    const isFirstLogin = !localStorage.getItem(`mymsg_user_${id}`);
+    if (isFirstLogin) {
+      // Add MymsgAI as default contact
+      setTimeout(() => {
+        addContact("mymsgai", "MymsgAI");
+      }, 0);
+    }
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
@@ -180,15 +190,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addContact = (contactId: string) => {
-    if (!currentUser) return;
+  const addContact = (contactId: string, contactName: string): boolean => {
+    if (!currentUser) return false;
+    
+    // Special case for MymsgAI - always allow
+    if (contactId === "mymsgai") {
+      const existing = chats.find(c => c.type === 'direct' && c.id === `dm-${[currentUser.id, contactId].sort().join('-')}`);
+      if (existing) return false;
+      
+      const newChat: Chat = {
+        id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
+        type: 'direct',
+        name: "MymsgAI",
+        avatar: generateUserAvatarSvg("MymsgAI"),
+        participants: [currentUser.id, contactId],
+        messages: [],
+        lastMessageTime: Date.now(),
+        userId: currentUser.id
+      };
+      setChats(prev => [newChat, ...prev]);
+      return true;
+    }
+    
+    // For regular users - check if exists (check localStorage for that user)
+    const userExists = localStorage.getItem(`mymsg_user_${contactId}`) !== null;
+    if (!userExists) {
+      return false; // User doesn't exist
+    }
+    
     const existing = chats.find(c => c.type === 'direct' && c.participants.includes(contactId) && c.participants.includes(currentUser.id));
-    if (existing) return;
+    if (existing) return false;
 
     const newChat: Chat = {
       id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
       type: 'direct',
-      name: `Usuario ${contactId}`,
+      name: contactName,
       avatar: generateUserAvatarSvg(contactId),
       participants: [currentUser.id, contactId],
       messages: [],
@@ -196,6 +232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       userId: currentUser.id
     };
     setChats(prev => [newChat, ...prev]);
+    return true;
   };
 
   const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' = 'text', mediaUrl?: string) => {
@@ -215,12 +252,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
-        return {
+        const updatedChat = {
           ...c,
           messages: [...c.messages, newMessage],
           lastMessage: type === 'text' ? censoredText : (type === 'image' ? '📷 Imagen' : '🎤 Audio'),
           lastMessageTime: newMessage.timestamp
         };
+        
+        // Auto-reply from MymsgAI
+        if (c.participants.includes('mymsgai') && type === 'text') {
+          import('./mymsgai').then(({ getMymsgAIResponse }) => {
+            getMymsgAIResponse(text).then((response) => {
+              const aiMessage: Message = {
+                id: nanoid(),
+                senderId: 'mymsgai',
+                text: response,
+                timestamp: Date.now(),
+                type: 'text'
+              };
+              setChats(prev => prev.map(ch => 
+                ch.id === chatId 
+                  ? { ...ch, messages: [...ch.messages, aiMessage], lastMessage: response, lastMessageTime: Date.now() }
+                  : ch
+              ));
+            });
+          });
+        }
+        
+        return updatedChat;
       }
       return c;
     }));
@@ -231,6 +290,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const getChatMessages = (chatId: string): Message[] => {
     const chat = chats.find(c => c.id === chatId);
     return chat?.messages || [];
+  };
+
+  const getAllUsers = (): Map<string, User> => {
+    const users = new Map<string, User>();
+    // Collect all users from localStorage that have been created
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.startsWith('mymsg_user_') && !key.includes('chats') && !key.includes('reports')) {
+        try {
+          const user = JSON.parse(localStorage.getItem(key) || '');
+          users.set(user.id, user);
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+    });
+    return users;
   };
 
   const updateUser = (updates: Partial<User>) => {
@@ -289,7 +365,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reports,
       reportEntity,
       setChatWallpaper,
-      getChatMessages
+      getChatMessages,
+      getAllUsers
     }}>
       {children}
     </StoreContext.Provider>

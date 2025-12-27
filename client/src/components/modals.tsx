@@ -138,8 +138,30 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
 }
 
 export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { addContact } = useStore();
+  const { addContact, getAllUsers } = useStore();
   const [friendId, setFriendId] = useState("");
+  const [error, setError] = useState("");
+
+  const handleAddContact = () => {
+    setError("");
+    if (!friendId.trim()) return;
+    
+    // Get user info
+    const users = getAllUsers();
+    const user = users.get(friendId);
+    
+    if (!user) {
+      setError("Usuario incorrecto o inexistente");
+      return;
+    }
+    
+    const success = addContact(friendId, user.name);
+    if (success) {
+      setFriendId("");
+      setError("");
+      onOpenChange(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,22 +170,21 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
           <DialogTitle>Añadir Amigo</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {error && (
+            <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
           <div className="space-y-2">
             <Label>ID de Usuario</Label>
             <Input 
               type="text" 
               placeholder="Ej: 1002" 
               value={friendId}
-              onChange={(e) => setFriendId(e.target.value)}
+              onChange={(e) => { setFriendId(e.target.value); setError(""); }}
             />
           </div>
-          <Button className="w-full" onClick={() => { 
-            if (friendId.trim()) {
-              addContact(friendId);
-              setFriendId("");
-              onOpenChange(false);
-            }
-          }}>
+          <Button className="w-full" onClick={handleAddContact}>
             Añadir Contacto
           </Button>
         </div>
