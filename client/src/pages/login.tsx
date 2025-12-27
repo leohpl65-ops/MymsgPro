@@ -12,9 +12,9 @@ const ADMIN_ID = "12345670";
 const ADMIN_PASSWORD = "1324567";
 
 export default function LoginPage() {
-  const { login, currentUser } = useStore();
+  const { login, currentUser, verifyPassword } = useStore();
   const [, setLocation] = useLocation();
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ name: string; id: string }>();
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ name: string; id: string; password: string }>();
   const [adminPassword, setAdminPassword] = useState("");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -25,10 +25,10 @@ export default function LoginPage() {
     }
   }, [currentUser, setLocation]);
 
-  const onSubmit = (data: { name: string; id: string }) => {
+  const onSubmit = (data: { name: string; id: string; password: string }) => {
     setLoginError("");
     
-    // If trying to login as admin, require password
+    // If trying to login as admin, require admin password
     if (data.id === ADMIN_ID) {
       if (!adminPassword) {
         setLoginError("Se requiere código de administrador");
@@ -42,7 +42,13 @@ export default function LoginPage() {
       }
     }
     
-    login(data.name, data.id);
+    // Verify user password
+    if (!verifyPassword(data.id, data.password)) {
+      setLoginError("Contraseña incorrecta");
+      return;
+    }
+    
+    login(data.name, data.id, data.password);
     reset();
     setAdminPassword("");
     setShowAdminPassword(false);
@@ -82,6 +88,14 @@ export default function LoginPage() {
               {...register("id", { required: true })}
               type="text"
               placeholder="ID de Usuario" 
+              className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 h-12"
+            />
+          </div>
+          <div className="space-y-2">
+            <Input 
+              {...register("password", { required: true })}
+              type="password"
+              placeholder="Contraseña" 
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 h-12"
             />
           </div>

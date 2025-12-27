@@ -8,6 +8,7 @@ export interface User {
   id: string;
   name: string;
   avatar?: string;
+  password: string;
 }
 
 export interface Message {
@@ -45,7 +46,8 @@ export interface Report {
 interface StoreContextType {
   currentUser: User | null;
   isOnline: boolean;
-  login: (name: string, id: string) => void;
+  login: (name: string, id: string, password: string) => void;
+  verifyPassword: (id: string, password: string) => boolean;
   logout: () => void;
   chats: Chat[];
   createGroup: (name: string) => void;
@@ -123,14 +125,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem("mymsg_user", JSON.stringify(currentUser));
+      localStorage.setItem(`mymsg_user_${currentUser.id}`, JSON.stringify(currentUser));
     } else {
       localStorage.removeItem("mymsg_user");
     }
   }, [currentUser]);
 
-  const login = (name: string, id: string) => {
-    const user = { id, name, avatar: generateUserAvatarSvg(name) };
+  const login = (name: string, id: string, password: string) => {
+    const user = { id, name, password, avatar: generateUserAvatarSvg(name) };
     setCurrentUser(user);
+  };
+
+  const verifyPassword = (id: string, password: string): boolean => {
+    const savedUser = localStorage.getItem(`mymsg_user_${id}`);
+    if (!savedUser) return true; // First login, accept any password
+    try {
+      const user = JSON.parse(savedUser);
+      return user.password === password;
+    } catch {
+      return false;
+    }
   };
 
   const logout = () => {
@@ -262,6 +276,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       currentUser,
       isOnline,
       login,
+      verifyPassword,
       logout,
       chats,
       createGroup,
