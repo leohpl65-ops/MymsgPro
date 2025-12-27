@@ -11,7 +11,6 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
 
   // Math questions
   if (lowerMessage.includes("cuánto") || lowerMessage.includes("cuanto") || lowerMessage.includes("resultado")) {
-    // Simple math evaluation
     try {
       const mathMatch = message.match(/(\d+)\s*([+\-*/])\s*(\d+)/);
       if (mathMatch) {
@@ -83,7 +82,6 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
     "animal más grande": "La ballena azul es el animal más grande del mundo.",
   };
 
-  // Check general knowledge
   for (const [key, answer] of Object.entries(generalAnswers)) {
     if (lowerMessage.includes(key)) {
       return answer;
