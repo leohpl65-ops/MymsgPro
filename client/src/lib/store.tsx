@@ -64,6 +64,9 @@ interface StoreContextType {
   getAllUsers: () => Map<string, User>;
   forgetChat: (chatId: string) => void;
   clearChatMessages: (chatId: string) => void;
+  deleteMessage: (chatId: string, messageId: string) => void;
+  replyToMessage: (chatId: string, messageId: string, replyText: string) => void;
+  forwardMessage: (fromChatId: string, messageId: string, toChatId: string) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -273,6 +276,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           lastMessageTime: newMessage.timestamp
         };
         
+        // Send browser notification if permission granted
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const senderName = currentUser.name;
+          const messageContent = type === 'text' ? censoredText : (type === 'image' ? 'Envió una imagen' : 'Envió un audio');
+          new Notification(`${senderName} en ${c.name}`, {
+            body: messageContent,
+            icon: c.avatar
+          });
+        }
+        
         // Auto-reply from MymsgAI
         if (c.participants.includes('mymsgai') && type === 'text') {
           setTimeout(() => {
@@ -376,6 +389,72 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, wallpaper: url } : c));
   };
 
+  const deleteMessage = (chatId: string, messageId: string) => {
+    setChats(prev => prev.map(c => 
+      c.id === chatId 
+        ? { ...c, messages: c.messages.filter(m => m.id !== messageId) }
+        : c
+    ));
+  };
+
+  const replyToMessage = (chatId: string, messageId: string, replyText: string) => {
+    if (!currentUser) return;
+    const chat = chats.find(c => c.id === chatId);
+    if (!chat) return;
+    const originalMessage = chat.messages.find(m => m.id === messageId);
+    if (!originalMessage) return;
+    
+    const censoredText = censorMessage(replyText);
+    const newMessage: Message = {
+      id: nanoid(),
+      senderId: currentUser.id,
+      text: `📌 Respuesta a ${originalMessage.senderId}: ${censoredText}`,
+      timestamp: Date.now(),
+      type: 'text'
+    };
+
+    setChats(prev => prev.map(c => {
+      if (c.id === chatId) {
+        return {
+          ...c,
+          messages: [...c.messages, newMessage],
+          lastMessage: censoredText,
+          lastMessageTime: newMessage.timestamp
+        };
+      }
+      return c;
+    }));
+  };
+
+  const forwardMessage = (fromChatId: string, messageId: string, toChatId: string) => {
+    if (!currentUser) return;
+    const fromChat = chats.find(c => c.id === fromChatId);
+    if (!fromChat) return;
+    const originalMessage = fromChat.messages.find(m => m.id === messageId);
+    if (!originalMessage) return;
+    
+    const newMessage: Message = {
+      id: nanoid(),
+      senderId: currentUser.id,
+      text: `↪️ Reenviado: ${originalMessage.text}`,
+      timestamp: Date.now(),
+      type: originalMessage.type,
+      mediaUrl: originalMessage.mediaUrl
+    };
+
+    setChats(prev => prev.map(c => {
+      if (c.id === toChatId) {
+        return {
+          ...c,
+          messages: [...c.messages, newMessage],
+          lastMessage: originalMessage.text,
+          lastMessageTime: newMessage.timestamp
+        };
+      }
+      return c;
+    }));
+  };
+
   return (
     <StoreContext.Provider value={{
       currentUser,
@@ -397,7 +476,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       getChatMessages,
       getAllUsers,
       forgetChat,
-      clearChatMessages
+      clearChatMessages,
+      deleteMessage,
+      replyToMessage,
+      forwardMessage
     }}>
       {children}
     </StoreContext.Provider>

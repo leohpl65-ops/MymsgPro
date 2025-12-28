@@ -12,10 +12,18 @@ const DRUG_WORDS = [
   'lsd', 'ácido', 'éxtasis', 'mdma', 'anfetamina', 'speed', 'crack',
   'metanfetamina', 'meth', 'pastilla', 'píldora', 'ketamina', 'ghb',
   'cocaine', 'heroin', 'marijuana', 'weed', 'pot', 'hash', 'ecstasy',
-  'meth', 'acid', 'lsd', 'crack', 'methamphetamine'
+  'meth', 'acid', 'lsd', 'crack', 'methamphetamine', 'droga', 'narcótico',
+  'opiáceo', 'opio', 'morfina', 'tramadol', 'fentanilo'
 ];
 
-const ALL_BANNED_WORDS = [...BAD_WORDS, ...DRUG_WORDS];
+const REPRODUCTIVE_WORDS = [
+  'pene', 'penis', 'vagina', 'vulva', 'testículo', 'testículo', 'semen',
+  'esperma', 'pezón', 'teta', 'tetas', 'mama', 'mamas', 'mama', 'mamas',
+  'clítoris', 'ano', 'anus', 'próstata', 'pubis', 'pubico', 'glande',
+  'prepucio', 'escroto', 'útero', 'ovarios', 'trompas'
+];
+
+const ALL_BANNED_WORDS = [...BAD_WORDS, ...DRUG_WORDS, ...REPRODUCTIVE_WORDS];
 
 export function censorMessage(text: string): string {
   let censored = text;
