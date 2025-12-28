@@ -62,6 +62,8 @@ interface StoreContextType {
   setChatWallpaper: (chatId: string, url: string) => void;
   getChatMessages: (chatId: string) => Message[];
   getAllUsers: () => Map<string, User>;
+  forgetChat: (chatId: string) => void;
+  clearChatMessages: (chatId: string) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -271,8 +273,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         
         // Auto-reply from MymsgAI
         if (c.participants.includes('mymsgai') && type === 'text') {
-          import('./mymsgai').then(({ getMymsgAIResponse }) => {
-            getMymsgAIResponse(text).then((response) => {
+          setTimeout(() => {
+            import('./mymsgai').then(({ getMymsgAIResponse }) => {
+              const response = getMymsgAIResponse(text);
               const aiMessage: Message = {
                 id: nanoid(),
                 senderId: 'mymsgai',
@@ -286,7 +289,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   : ch
               ));
             });
-          });
+          }, 500);
         }
         
         return updatedChat;
@@ -326,6 +329,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateGroup = (groupId: string, updates: Partial<Chat>) => {
     setChats(prev => prev.map(c => c.id === groupId ? { ...c, ...updates } : c));
+  };
+
+  const forgetChat = (chatId: string) => {
+    if (!currentUser) return;
+    setChats(prev => prev.filter(c => c.id !== chatId));
+  };
+
+  const clearChatMessages = (chatId: string) => {
+    if (!currentUser) return;
+    setChats(prev => prev.map(c => 
+      c.id === chatId 
+        ? { ...c, messages: [], lastMessage: '', lastMessageTime: Date.now() }
+        : c
+    ));
   };
 
   const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
@@ -376,7 +393,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reportEntity,
       setChatWallpaper,
       getChatMessages,
-      getAllUsers
+      getAllUsers,
+      forgetChat,
+      clearChatMessages
     }}>
       {children}
     </StoreContext.Provider>

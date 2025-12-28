@@ -6,14 +6,14 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply } from "lucide-react";
+import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
@@ -27,6 +27,8 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micPressRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Redirect if invalid chat
   if (!chat || !currentUser) {
@@ -54,8 +56,37 @@ export default function ChatPage() {
     
     const url = URL.createObjectURL(file);
     
-    if (isAudio) sendMessage(chat.id, "Audio message", 'audio', url);
-    else if (isImage) sendMessage(chat.id, "Image message", 'image', url);
+    if (isAudio) sendMessage(chat.id, "Mensaje de voz", 'audio', url);
+    else if (isImage) sendMessage(chat.id, "Mensaje de imagen", 'image', url);
+  };
+
+  const startMicrophone = () => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+      
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const url = URL.createObjectURL(audioBlob);
+        sendMessage(chat.id, "Mensaje de voz", 'audio', url);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+    }).catch(() => {
+      alert("No se pudo acceder al micrófono");
+    });
+  };
+
+  const stopMicrophone = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
   };
 
   const changeWallpaper = () => {
@@ -176,7 +207,7 @@ export default function ChatPage() {
             </Button>
           </div>
           <div className="grid grid-cols-6 gap-2">
-            {['😀', '😂', '😍', '🤔', '😢', '🎉', '🔥', '💯', '👍', '👎', '💔', '😱'].map((emoji) => (
+            {['😀', '😂', '😍', '🤔', '😢', '🎉', '🔥', '💯', '👍', '👎', '💔', '😱', '😎', '🤩', '😭', '😡', '🤔', '😴', '🤒', '🤐', '😷', '🤒', '😻', '😼', '❤️', '💔', '🔥', '⭐', '✨'].map((emoji) => (
               <button key={emoji} className="text-2xl hover:scale-110 transition" onClick={() => { setInputText(inputText + emoji); setShowEmojiPicker(false); }}>
                 {emoji}
               </button>
@@ -232,30 +263,32 @@ export default function ChatPage() {
           </Button>
         ) : (
           <>
-             <input type="file" ref={fileInputRef} className="hidden" accept="image/*,audio/*" onChange={handleFileUpload} />
+             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
              <Button 
                size="icon" 
                variant="ghost" 
-               className={cn("text-muted-foreground shrink-0", isRecording && "bg-red-500/20 text-red-600")}
+               className={cn("text-muted-foreground shrink-0", isRecording && "bg-red-500/20 text-red-600 animate-pulse")}
                onMouseDown={() => {
                  setIsRecording(true);
-                 micPressRef.current = setTimeout(() => {
-                   fileInputRef.current?.click();
-                 }, 500);
+                 startMicrophone();
                }}
                onMouseUp={() => {
                  setIsRecording(false);
-                 if (micPressRef.current) clearTimeout(micPressRef.current);
+                 stopMicrophone();
+               }}
+               onMouseLeave={() => {
+                 if (isRecording) {
+                   setIsRecording(false);
+                   stopMicrophone();
+                 }
                }}
                onTouchStart={() => {
                  setIsRecording(true);
-                 micPressRef.current = setTimeout(() => {
-                   fileInputRef.current?.click();
-                 }, 500);
+                 startMicrophone();
                }}
                onTouchEnd={() => {
                  setIsRecording(false);
-                 if (micPressRef.current) clearTimeout(micPressRef.current);
+                 stopMicrophone();
                }}
              >
                <Mic className="h-6 w-6" />
@@ -283,12 +316,23 @@ export default function ChatPage() {
                <div className="p-3 bg-muted rounded-md text-sm">
                  <p className="font-semibold mb-2">Miembros:</p>
                  <ul className="space-y-2">
-                   {chat.participants.map(p => <li key={p} className="text-sm"><span className="font-semibold">{p === 'mymsgai' ? 'MymsgAI' : p}</span><br/><span className="text-xs text-muted-foreground">{p}</span></li>)}
+                   {chat.participants.map(p => {
+                     const displayName = p === 'mymsgai' ? 'MymsgAI' : p;
+                     return <li key={p} className="text-sm"><span className="font-semibold">{displayName}</span><br/><span className="text-xs text-muted-foreground">{p}</span></li>;
+                   })}
                  </ul>
                </div>
              )}
 
-             <Button variant="destructive" className="w-full justify-start" onClick={() => { reportEntity(chat.type === 'group' ? 'Grupo' : 'Usuario', chat.id, chat.name); setShowSettings(false); }}>
+             <Button variant="outline" className="w-full justify-start text-orange-600 hover:text-orange-700 hover:bg-orange-50" onClick={() => { clearChatMessages(chat.id); setShowSettings(false); }}>
+               <Trash2 className="mr-2 h-4 w-4" /> Limpiar Chat
+             </Button>
+
+             <Button variant="destructive" className="w-full justify-start" onClick={() => { forgetChat(chat.id); setLocation("/contacts"); }}>
+               <LogOut className="mr-2 h-4 w-4" /> Olvidar Chat
+             </Button>
+
+             <Button variant="ghost" className="w-full justify-start text-red-600 hover:bg-red-50" onClick={() => { reportEntity(chat.type === 'group' ? 'Grupo' : 'Usuario', chat.id, chat.name); setShowSettings(false); }}>
                <Flag className="mr-2 h-4 w-4" /> Reportar {chat.type === 'group' ? 'Grupo' : 'Usuario'}
              </Button>
            </div>

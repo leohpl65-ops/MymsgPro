@@ -1,7 +1,7 @@
 // MymsgAI - Intelligent chatbot
 import { containsBannedWord } from "./censor";
 
-export async function getMymsgAIResponse(message: string): Promise<string> {
+export function getMymsgAIResponse(message: string): string {
   // Check if message contains inappropriate content
   if (containsBannedWord(message)) {
     return "Lo siento, soy una IA y no puedo responderte eso.";
