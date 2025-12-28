@@ -29,6 +29,7 @@ export default function ChatPage() {
   const micPressRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const longPressTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // Redirect if invalid chat
   if (!chat || !currentUser) {
@@ -145,14 +146,18 @@ export default function ChatPage() {
         <div className="relative z-10 flex flex-col gap-2 pb-2">
           {chat.messages.map((msg, idx) => {
             const isMe = msg.senderId === currentUser.id;
-            const longPressRef = useRef<NodeJS.Timeout | null>(null);
             
             const handleMouseDown = () => {
-              longPressRef.current = setTimeout(() => setSelectedMessage(msg.id), 500);
+              const timer = setTimeout(() => setSelectedMessage(msg.id), 500);
+              longPressTimersRef.current.set(msg.id, timer);
             };
             
             const handleMouseUp = () => {
-              if (longPressRef.current) clearTimeout(longPressRef.current);
+              const timer = longPressTimersRef.current.get(msg.id);
+              if (timer) {
+                clearTimeout(timer);
+                longPressTimersRef.current.delete(msg.id);
+              }
             };
             
             return (
@@ -316,9 +321,22 @@ export default function ChatPage() {
                <div className="p-3 bg-muted rounded-md text-sm">
                  <p className="font-semibold mb-2">Miembros:</p>
                  <ul className="space-y-2">
-                   {chat.participants.map(p => {
-                     const displayName = p === 'mymsgai' ? 'MymsgAI' : p;
-                     return <li key={p} className="text-sm"><span className="font-semibold">{displayName}</span><br/><span className="text-xs text-muted-foreground">{p}</span></li>;
+                   {chat.participants.map(participantId => {
+                     let displayName = participantId;
+                     if (participantId === 'mymsgai') {
+                       displayName = 'MymsgAI';
+                     } else {
+                       try {
+                         const userStr = localStorage.getItem(`mymsg_user_${participantId}`);
+                         if (userStr) {
+                           const user = JSON.parse(userStr);
+                           displayName = user.name || participantId;
+                         }
+                       } catch (e) {
+                         // ignore
+                       }
+                     }
+                     return <li key={participantId} className="text-sm"><span className="font-semibold block">{displayName}</span><span className="text-xs text-muted-foreground">{participantId}</span></li>;
                    })}
                  </ul>
                </div>

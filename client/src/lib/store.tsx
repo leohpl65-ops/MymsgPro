@@ -192,10 +192,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const joinGroup = (groupId: string) => {
     if (!currentUser) return;
-    const group = chats.find(c => c.id === groupId);
+    // Support both full ID (group-xxx) and short ID (xxx)
+    const fullGroupId = groupId.startsWith('group-') ? groupId : `group-${groupId}`;
+    const group = chats.find(c => c.id === fullGroupId || c.id === groupId);
     if (group && !group.participants.includes(currentUser.id)) {
       setChats(prev => prev.map(c => 
-        c.id === groupId 
+        c.id === group.id
           ? { ...c, participants: [...c.participants, currentUser.id] } 
           : c
       ));
