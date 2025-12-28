@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
@@ -22,7 +22,9 @@ export default function ChatPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,17 +235,31 @@ export default function ChatPage() {
             <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => setSelectedMessage(null)}>
               <X className="h-4 w-4 mr-2" /> Cerrar
             </Button>
-            <Button size="sm" variant="ghost" className="w-full justify-start text-sm">
-              <Share2 className="h-4 w-4 mr-2" /> Reenviar
-            </Button>
-            <Button size="sm" variant="ghost" className="w-full justify-start text-sm">
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { setReplyingTo(selectedMessage); setSelectedMessage(null); }}>
               <Reply className="h-4 w-4 mr-2" /> Responder
             </Button>
-            <Button size="sm" variant="destructive" className="w-full justify-start text-sm">
-              <RotateCcw className="h-4 w-4 mr-2" /> Eliminar
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { setShowForwardDialog(true); setSelectedMessage(null); }}>
+              <Share2 className="h-4 w-4 mr-2" /> Reenviar
             </Button>
+            {chat.messages.find(m => m.id === selectedMessage)?.senderId === currentUser?.id && (
+              <Button size="sm" variant="destructive" className="w-full justify-start text-sm" onClick={() => { deleteMessage(chat.id, selectedMessage); setSelectedMessage(null); }}>
+                <RotateCcw className="h-4 w-4 mr-2" /> Eliminar
+              </Button>
+            )}
           </div>
         </motion.div>
+      )}
+
+      {/* Reply Indicator */}
+      {replyingTo && (
+        <div className="bg-muted p-2 border-t flex items-center justify-between">
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground">Respondiendo a un mensaje</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       )}
 
       {/* Input Area */}
@@ -301,6 +317,38 @@ export default function ChatPage() {
           </>
         )}
       </div>
+
+      {/* Forward Dialog */}
+      <Dialog open={showForwardDialog} onOpenChange={setShowForwardDialog}>
+        <DialogContent className="sm:max-w-xs" aria-describedby="forward-dialog">
+          <DialogHeader>
+            <DialogTitle>Reenviar a</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {chat.messages.find(m => m.id === selectedMessage) && chat.type === 'group' && (
+              <div className="text-xs text-muted-foreground mb-3 pb-3 border-b">
+                Este mensaje se reenviará a otros chats/grupos
+              </div>
+            )}
+            {chats.filter(c => c.id !== chatId).map(c => (
+              <Button 
+                key={c.id} 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedMessage) {
+                    forwardMessage(chat.id, selectedMessage, c.id);
+                    setShowForwardDialog(false);
+                  }
+                }}
+              >
+                <img src={c.avatar} className="w-5 h-5 rounded-full mr-2" />
+                <span className="text-sm">{c.name}</span>
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Chat Settings Modal */}
       <Dialog open={showSettings} onOpenChange={setShowSettings}>

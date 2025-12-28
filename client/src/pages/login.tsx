@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { MessageCircle, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 
-const ADMIN_ID = "12345670";
-const ADMIN_PASSWORD = "1324567";
+const OWNER_ID = "12345670";
+const OWNER_PASSWORD = "12345670";
+const ADMIN_PASSWORD = "13245670";
 
 export default function LoginPage() {
   const { login, currentUser, verifyPassword } = useStore();
@@ -28,8 +29,8 @@ export default function LoginPage() {
   const onSubmit = (data: { name: string; id: string; password: string }) => {
     setLoginError("");
     
-    // If trying to login as admin, require admin password
-    if (data.id === ADMIN_ID) {
+    // If trying to login as Owner/Admin, require admin password
+    if (data.id === OWNER_ID) {
       if (!adminPassword) {
         setLoginError("Se requiere código de administrador");
         setShowAdminPassword(true);
@@ -48,7 +49,9 @@ export default function LoginPage() {
       return;
     }
     
-    login(data.name, data.id, data.password);
+    // For Owner account, force name to "Owner"
+    const finalName = data.id === OWNER_ID ? "Owner" : data.name;
+    login(finalName, data.id, data.password);
     reset();
     setAdminPassword("");
     setShowAdminPassword(false);
