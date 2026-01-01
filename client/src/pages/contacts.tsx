@@ -107,7 +107,7 @@ export default function ContactsPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">ID: {chat.id.replace('dm-', '').replace('group-', '')}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{chat.id.replace('dm-', '').replace('group-', '')}</p>
                   </div>
                 </motion.div>
               );

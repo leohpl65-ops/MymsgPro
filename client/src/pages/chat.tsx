@@ -96,6 +96,8 @@ export default function ChatPage() {
   const stopMicrophone = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
+      // Ensure all tracks are stopped immediately
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
     }
   };
 
@@ -209,9 +211,9 @@ export default function ChatPage() {
                     <div className="flex items-center">
                       <span className={cn(
                         "text-[10px]",
-                        msg.status === 'read' ? "text-blue-300" : "text-primary-foreground/70"
+                        msg.status === 'read' ? "text-blue-400" : "text-primary-foreground/70"
                       )}>
-                        {msg.status === 'sent' ? '✅' : '✅✅'}
+                        {msg.status === 'sent' ? '✔' : '✔✔'}
                       </span>
                     </div>
                   )}
