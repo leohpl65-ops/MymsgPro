@@ -66,34 +66,52 @@ export default function ContactsPage() {
           </div>
         ) : (
           <div className="divide-y">
-            {chats.map((chat) => (
-              <motion.div 
-                key={chat.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-3 p-4 hover:bg-muted/50 active:bg-muted cursor-pointer transition-colors"
-                onClick={() => setLocation(`/chat/${chat.id}`)}
-              >
-                <img 
-                  src={chat.avatar} 
-                  className="w-12 h-12 rounded-full object-cover border border-border" 
-                  alt={chat.name} 
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-0.5">
-                    <h3 className="font-semibold truncate">{chat.name}</h3>
-                    {chat.lastMessageTime && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
+            {chats.map((chat) => {
+              const unreadCount = chat.messages.filter(m => m.senderId !== currentUser.id && !m.read).length;
+              return (
+                <motion.div 
+                  key={chat.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex items-center gap-3 p-4 hover:bg-muted/50 active:bg-muted cursor-pointer transition-colors"
+                  onClick={() => setLocation(`/chat/${chat.id}`)}
+                >
+                  <img 
+                    src={chat.avatar} 
+                    className="w-12 h-12 rounded-full object-cover border border-border" 
+                    alt={chat.name} 
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-0.5">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <h3 className="font-semibold truncate">{chat.name}</h3>
+                        {chat.streak && chat.streak > 0 && (
+                          <span className="text-xs flex items-center gap-0.5 bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">
+                            🔥 {chat.streak}
+                          </span>
+                        )}
+                      </div>
+                      {chat.lastMessageTime && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-muted-foreground truncate flex-1">
+                        {chat.lastMessage || "Empezar chat..."}
+                      </p>
+                      {unreadCount > 0 && (
+                        <span className="bg-primary text-primary-foreground text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center ml-2">
+                          {unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">ID: {chat.id.replace('dm-', '').replace('group-', '')}</p>
                   </div>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {chat.lastMessage || "Empezar chat..."}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>

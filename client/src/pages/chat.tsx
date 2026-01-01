@@ -13,10 +13,17 @@ import { cn } from "@/lib/utils";
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage, markChatAsRead } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
+
+  // Mark chat as read when opening
+  useEffect(() => {
+    if (chatId) {
+      markChatAsRead(chatId);
+    }
+  }, [chatId, chat?.messages.length]);
   
   const [inputText, setInputText] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -194,9 +201,21 @@ export default function ChatPage() {
                    <audio controls src={msg.mediaUrl} className="max-w-[200px] h-10 mt-1" />
                 )}
 
-                <p className={cn("text-[10px] text-right mt-1 opacity-70", isMe ? "text-primary-foreground" : "text-muted-foreground")}>
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                <div className="flex items-center justify-end gap-1 mt-1">
+                  <p className={cn("text-[10px] opacity-70", isMe ? "text-primary-foreground" : "text-muted-foreground")}>
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  {isMe && (
+                    <div className="flex items-center">
+                      <span className={cn(
+                        "text-[10px]",
+                        msg.status === 'read' ? "text-blue-300" : "text-primary-foreground/70"
+                      )}>
+                        {msg.status === 'sent' ? '✅' : '✅✅'}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </motion.div>
             );
           })}

@@ -15,7 +15,7 @@ const ADMIN_PASSWORD = "13245670";
 export default function LoginPage() {
   const { login, currentUser, verifyPassword } = useStore();
   const [, setLocation] = useLocation();
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ name: string; id: string; password: string }>();
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ id: string; password: string }>();
   const [adminPassword, setAdminPassword] = useState("");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -26,7 +26,7 @@ export default function LoginPage() {
     }
   }, [currentUser, setLocation]);
 
-  const onSubmit = (data: { name: string; id: string; password: string }) => {
+  const onSubmit = (data: { id: string; password: string }) => {
     setLoginError("");
     
     // If trying to login as Owner/Admin, require admin password
@@ -49,8 +49,14 @@ export default function LoginPage() {
       return;
     }
     
-    // For Owner account, force name to "Owner"
-    const finalName = data.id === OWNER_ID ? "Owner" : data.name;
+    // Get existing user name from localStorage if possible
+    let existingName = "Usuario";
+    const savedUser = localStorage.getItem(`mymsg_user_${data.id}`);
+    if (savedUser) {
+      existingName = JSON.parse(savedUser).name;
+    }
+    
+    const finalName = data.id === OWNER_ID ? "Owner" : existingName;
     login(finalName, data.id, data.password);
     reset();
     setAdminPassword("");
@@ -79,13 +85,6 @@ export default function LoginPage() {
             </div>
           )}
           
-          <div className="space-y-2">
-            <Input 
-              {...register("name", { required: true })}
-              placeholder="Nombre" 
-              className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 h-12"
-            />
-          </div>
           <div className="space-y-2">
             <Input 
               {...register("id", { required: true })}
@@ -121,6 +120,19 @@ export default function LoginPage() {
           <Button type="submit" className="w-full h-12 text-lg font-medium shadow-lg shadow-primary/20">
             ENTRAR
           </Button>
+
+          <div className="text-center pt-2">
+            <p className="text-sm text-slate-400">
+              ¿no tienes cuenta de mymsg?{" "}
+              <button 
+                type="button" 
+                onClick={() => setLocation("/register")}
+                className="text-blue-400 font-semibold"
+              >
+                Inicia sesión!
+              </button>
+            </p>
+          </div>
         </form>
       </motion.div>
     </MobileLayout>
