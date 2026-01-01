@@ -9,6 +9,7 @@ export interface User {
   name: string;
   avatar?: string;
   password: string;
+  language?: 'es' | 'en';
 }
 
 export interface Message {
@@ -18,6 +19,8 @@ export interface Message {
   timestamp: number;
   type: 'text' | 'image' | 'audio';
   mediaUrl?: string;
+  read?: boolean;
+  status: 'sent' | 'delivered' | 'read';
 }
 
 export interface Chat {
@@ -31,6 +34,8 @@ export interface Chat {
   lastMessageTime?: number;
   wallpaper?: string;
   userId?: string;
+  streak?: number;
+  lastInteractionDay?: string;
 }
 
 export interface Report {
@@ -65,6 +70,7 @@ interface StoreContextType {
   forgetChat: (chatId: string) => void;
   clearChatMessages: (chatId: string) => void;
   deleteMessage: (chatId: string, messageId: string) => void;
+  markChatAsRead: (chatId: string) => void;
   replyToMessage: (chatId: string, messageId: string, replyText: string) => void;
   forwardMessage: (fromChatId: string, messageId: string, toChatId: string) => void;
 }
@@ -157,8 +163,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   const login = (name: string, id: string, password: string) => {
-    const user = { id, name, password, avatar: generateUserAvatarSvg(name) };
+    // If user already exists in system, update their name globally
+    const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+    if (savedUserStr) {
+      const savedUser = JSON.parse(savedUserStr);
+      savedUser.name = name;
+      localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(savedUser));
+    }
+
+    const user: User = { 
+      id, 
+      name, 
+      password, 
+      avatar: generateUserAvatarSvg(name),
+      language: navigator.language.startsWith('es') ? 'es' : 'en'
+    };
     setCurrentUser(user);
+    localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(user));
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
@@ -264,16 +285,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       text: censoredText,
       timestamp: Date.now(),
       type,
-      mediaUrl
+      mediaUrl,
+      status: 'sent',
+      read: false
     };
 
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
+        // Update streak
+        const today = new Date().toISOString().split('T')[0];
+        let newStreak = c.streak || 0;
+        if (c.lastInteractionDay !== today) {
+          newStreak += 1;
+        }
+
         const updatedChat = {
           ...c,
           messages: [...c.messages, newMessage],
           lastMessage: type === 'text' ? censoredText : (type === 'image' ? '📷 Imagen' : '🎤 Audio'),
-          lastMessageTime: newMessage.timestamp
+          lastMessageTime: newMessage.timestamp,
+          streak: newStreak,
+          lastInteractionDay: today
         };
         
         // Send browser notification if permission granted
@@ -296,7 +328,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 senderId: 'mymsgai',
                 text: response,
                 timestamp: Date.now(),
-                type: 'text'
+                type: 'text',
+                status: 'read',
+                read: true
               };
               setChats(prev => prev.map(ch => 
                 ch.id === chatId 
@@ -397,6 +431,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ));
   };
 
+  const markChatAsRead = (chatId: string) => {
+    setChats(prev => prev.map(c => {
+      if (c.id === chatId) {
+        return {
+          ...c,
+          messages: c.messages.map(m => m.senderId !== currentUser?.id ? { ...m, read: true } : m)
+        };
+      }
+      return c;
+    }));
+  };
+
   const replyToMessage = (chatId: string, messageId: string, replyText: string) => {
     if (!currentUser) return;
     const chat = chats.find(c => c.id === chatId);
@@ -410,7 +456,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       senderId: currentUser.id,
       text: `📌 Respuesta a ${originalMessage.senderId}: ${censoredText}`,
       timestamp: Date.now(),
-      type: 'text'
+      type: 'text',
+      status: 'sent',
+      read: false
     };
 
     setChats(prev => prev.map(c => {
@@ -439,7 +487,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       text: `↪️ Reenviado: ${originalMessage.text}`,
       timestamp: Date.now(),
       type: originalMessage.type,
-      mediaUrl: originalMessage.mediaUrl
+      mediaUrl: originalMessage.mediaUrl,
+      status: 'sent',
+      read: false
     };
 
     setChats(prev => prev.map(c => {
@@ -478,6 +528,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       forgetChat,
       clearChatMessages,
       deleteMessage,
+      markChatAsRead,
       replyToMessage,
       forwardMessage
     }}>
