@@ -176,10 +176,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       name, 
       password, 
       avatar: generateUserAvatarSvg(name),
-      language: navigator.language.startsWith('es') ? 'es' : 'en'
+      language: (localStorage.getItem(`mymsg_lang_${id}`) as any) || (navigator.language.startsWith('es') ? 'es' : 'en')
     };
     setCurrentUser(user);
     localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(user));
+    
+    // Restore chats from localStorage for this specific user ID
+    const savedChats = localStorage.getItem(`mymsg_chats_${id}`);
+    if (savedChats) {
+      setChats(JSON.parse(savedChats));
+    }
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
@@ -218,6 +224,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     // Support both full ID (group-xxx) and short ID (xxx)
     const fullGroupId = groupId.startsWith('group-') ? groupId : `group-${groupId}`;
+    
+    // Check global users/groups storage if we had a backend, 
+    // for mockup mode we search in existing chats or try to "find" it
     const group = chats.find(c => c.id === fullGroupId || c.id === groupId);
     if (group && !group.participants.includes(currentUser.id)) {
       setChats(prev => prev.map(c => 
@@ -225,6 +234,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ? { ...c, participants: [...c.participants, currentUser.id] } 
           : c
       ));
+    } else if (!group) {
+       // Mock finding a group that exists in "the world"
+       const newGroup: Chat = {
+         id: fullGroupId,
+         type: 'group',
+         name: `Grupo ${groupId}`,
+         avatar: generateGroupAvatarSvg(groupId),
+         participants: [currentUser.id],
+         messages: [],
+         lastMessage: "Te has unido al grupo",
+         lastMessageTime: Date.now(),
+         userId: currentUser.id
+       };
+       setChats(prev => [newGroup, ...prev]);
     }
   };
 

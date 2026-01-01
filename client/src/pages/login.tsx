@@ -129,7 +129,7 @@ export default function LoginPage() {
                 onClick={() => setLocation("/register")}
                 className="text-blue-400 font-semibold"
               >
-                Inicia sesión!
+                Crea una cuenta!
               </button>
             </p>
           </div>
