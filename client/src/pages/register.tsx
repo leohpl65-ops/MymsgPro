@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { useStore } from "@/lib/store";
+import { generateUserAvatarSvg } from "@/lib/avatars";
 import { MobileLayout } from "@/components/mobile-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,18 @@ export default function RegisterPage() {
   const onSubmit = (data: { name: string; password: string }) => {
     // Generate a numeric ID automatically
     const autoId = Math.floor(10000000 + Math.random() * 90000000).toString();
+    
+    // Register the user in the "database" (localStorage) first
+    const user = { 
+      id: autoId, 
+      name: data.name, 
+      password: data.password, 
+      avatar: generateUserAvatarSvg(data.name),
+      language: navigator.language.startsWith('es') ? 'es' : 'en'
+    };
+    localStorage.setItem(`mymsg_user_${autoId}`, JSON.stringify(user));
+    
+    // Then perform login
     login(data.name, autoId, data.password);
     setLocation("/contacts");
   };
