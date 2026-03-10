@@ -180,10 +180,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       name, 
       password, 
       avatar: generateUserAvatarSvg(name),
-      language: (localStorage.getItem(`mymsg_lang_${id}`) as any) || (navigator.language.startsWith('es') ? 'es' : 'en')
+      language: (localStorage.getItem(`mymsg_lang_${id}`) as any) || (navigator.language.startsWith('es') ? 'es' : 'en'),
+      status: 'offline'
     };
     setCurrentUser(user);
     localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(user));
+    localStorage.setItem("mymsg_user", JSON.stringify(user));
     
     // Restore chats from localStorage for this specific user ID
     const savedChats = localStorage.getItem(`mymsg_chats_${id}`);
