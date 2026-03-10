@@ -26,8 +26,30 @@ export default function LoginPage() {
     }
   }, [currentUser, setLocation]);
 
+  const [loginAttempts, setLoginAttempts] = useState(() => {
+    const saved = localStorage.getItem("mymsg_login_attempts");
+    if (saved) {
+      const { count, timestamp } = JSON.parse(saved);
+      if (Date.now() - timestamp > 180000) return 0; // 3 min reset
+      return count;
+    }
+    return 0;
+  });
+
   const onSubmit = (data: { id: string; password: string }) => {
     setLoginError("");
+    
+    if (loginAttempts >= 7) {
+      const saved = JSON.parse(localStorage.getItem("mymsg_login_attempts") || "{}");
+      const timeLeft = Math.ceil((180000 - (Date.now() - saved.timestamp)) / 1000);
+      if (timeLeft > 0) {
+        setLoginError(`Demasiados intentos. Espera ${Math.ceil(timeLeft/60)} minutos.`);
+        return;
+      } else {
+        setLoginAttempts(0);
+        localStorage.removeItem("mymsg_login_attempts");
+      }
+    }
     
     // If trying to login as Owner/Admin, require admin password
     if (data.id === OWNER_ID) {
@@ -45,6 +67,9 @@ export default function LoginPage() {
     
     // Verify user password
     if (!verifyPassword(data.id, data.password)) {
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+      localStorage.setItem("mymsg_login_attempts", JSON.stringify({ count: newAttempts, timestamp: Date.now() }));
       setLoginError("Contraseña incorrecta");
       return;
     }
@@ -52,15 +77,20 @@ export default function LoginPage() {
     // Get existing user name from localStorage if possible
     let existingName = "Usuario";
     const savedUser = localStorage.getItem(`mymsg_user_${data.id}`);
-    if (savedUser) {
-      existingName = JSON.parse(savedUser).name;
-    }
     
-    const finalName = data.id === OWNER_ID ? "Owner" : existingName;
-    login(finalName, data.id, data.password);
-    reset();
-    setAdminPassword("");
-    setShowAdminPassword(false);
+    try {
+      const finalName = data.id === OWNER_ID ? "Owner" : (savedUser ? JSON.parse(savedUser).name : existingName);
+      login(finalName, data.id, data.password);
+      localStorage.removeItem("mymsg_login_attempts");
+      reset();
+      setAdminPassword("");
+      setShowAdminPassword(false);
+    } catch (e: any) {
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+      localStorage.setItem("mymsg_login_attempts", JSON.stringify({ count: newAttempts, timestamp: Date.now() }));
+      setLoginError(e.message || "Error al iniciar sesión");
+    }
   };
 
   return (
@@ -76,6 +106,9 @@ export default function LoginPage() {
           </div>
           <h1 className="text-3xl font-bold tracking-tight">MyMsg Pro</h1>
           <p className="text-slate-400">Inicia sesión para chatear</p>
+          {loginAttempts > 0 && (
+            <p className="text-xs text-orange-400 font-bold">Intentos fallidos: {loginAttempts}/7</p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

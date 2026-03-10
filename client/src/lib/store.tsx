@@ -163,8 +163,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   const login = (name: string, id: string, password: string) => {
-    // If user already exists in system, update their name globally
+    // Check if account exists
     const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+    if (!savedUserStr && id !== '12345670') {
+      throw new Error("esta cuenta no existe. Prueba otra ves");
+    }
+
     if (savedUserStr) {
       const savedUser = JSON.parse(savedUserStr);
       savedUser.name = name;
@@ -184,7 +188,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Restore chats from localStorage for this specific user ID
     const savedChats = localStorage.getItem(`mymsg_chats_${id}`);
     if (savedChats) {
-      setChats(JSON.parse(savedChats));
+      const parsedChats: Chat[] = JSON.parse(savedChats);
+      
+      // Sync group names and messages from "global" storage
+      const syncedChats = parsedChats.map(chat => {
+        if (chat.type === 'group') {
+          const globalGroupStr = localStorage.getItem(`mymsg_global_group_${chat.id}`);
+          if (globalGroupStr) {
+            const globalGroup = JSON.parse(globalGroupStr);
+            return {
+              ...chat,
+              name: globalGroup.name,
+              messages: globalGroup.messages,
+              lastMessage: globalGroup.lastMessage,
+              lastMessageTime: globalGroup.lastMessageTime,
+              participants: globalGroup.participants
+            };
+          }
+        } else if (chat.type === 'direct') {
+          // Check for offline messages sent to this user
+          const contactId = chat.participants.find(p => p !== id);
+          if (contactId) {
+            const offlineMsgsKey = `mymsg_offline_msgs_${id}_from_${contactId}`;
+            const offlineMsgsStr = localStorage.getItem(offlineMsgsKey);
+            if (offlineMsgsStr) {
+              const offlineMsgs = JSON.parse(offlineMsgsStr);
+              localStorage.removeItem(offlineMsgsKey);
+              return {
+                ...chat,
+                messages: [...chat.messages, ...offlineMsgs],
+                lastMessage: offlineMsgs[offlineMsgs.length - 1].text,
+                lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp
+              };
+            }
+          }
+        }
+        return chat;
+      });
+      
+      setChats(syncedChats);
     }
   };
 
@@ -206,8 +248,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const createGroup = (name: string) => {
     if (!currentUser) return;
+    const groupId = `group-${nanoid()}`;
     const newGroup: Chat = {
-      id: `group-${nanoid()}`,
+      id: groupId,
       type: 'group',
       name,
       avatar: generateGroupAvatarSvg(name),
@@ -217,16 +260,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastMessageTime: Date.now(),
       userId: currentUser.id
     };
+    
+    // Save to global storage for sync
+    localStorage.setItem(`mymsg_global_group_${groupId}`, JSON.stringify(newGroup));
+    
     setChats(prev => [newGroup, ...prev]);
   };
 
   const joinGroup = (groupId: string) => {
     if (!currentUser) return;
-    // Support both full ID (group-xxx) and short ID (xxx)
     const fullGroupId = groupId.startsWith('group-') ? groupId : `group-${groupId}`;
     
-    // Check global users/groups storage if we had a backend, 
-    // for mockup mode we search in existing chats or try to "find" it
+    // Check global storage first
+    const globalGroupStr = localStorage.getItem(`mymsg_global_group_${fullGroupId}`);
+    if (globalGroupStr) {
+      const globalGroup = JSON.parse(globalGroupStr);
+      if (!globalGroup.participants.includes(currentUser.id)) {
+        globalGroup.participants.push(currentUser.id);
+        localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(globalGroup));
+      }
+      
+      setChats(prev => {
+        const existing = prev.find(c => c.id === fullGroupId);
+        if (existing) return prev;
+        return [globalGroup, ...prev];
+      });
+      return;
+    }
+
+    // Fallback/Mock behavior if not in global
     const group = chats.find(c => c.id === fullGroupId || c.id === groupId);
     if (group && !group.participants.includes(currentUser.id)) {
       setChats(prev => prev.map(c => 
@@ -235,7 +297,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : c
       ));
     } else if (!group) {
-       // Mock finding a group that exists in "the world"
        const newGroup: Chat = {
          id: fullGroupId,
          type: 'group',
@@ -247,6 +308,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
          lastMessageTime: Date.now(),
          userId: currentUser.id
        };
+       localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(newGroup));
        setChats(prev => [newGroup, ...prev]);
     }
   };
@@ -330,6 +392,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           streak: newStreak,
           lastInteractionDay: today
         };
+        
+        // Broadcast for groups or handle offline for DMs (Mock)
+        if (c.type === 'group') {
+          const globalGroupStr = localStorage.getItem(`mymsg_global_group_${c.id}`);
+          if (globalGroupStr) {
+            const globalGroup = JSON.parse(globalGroupStr);
+            globalGroup.messages.push(newMessage);
+            globalGroup.lastMessage = updatedChat.lastMessage;
+            globalGroup.lastMessageTime = updatedChat.lastMessageTime;
+            localStorage.setItem(`mymsg_global_group_${c.id}`, JSON.stringify(globalGroup));
+          }
+        } else {
+          // Store offline message for the other user
+          const recipientId = c.participants.find(p => p !== currentUser.id);
+          if (recipientId) {
+            const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
+            const offlineMsgs = JSON.parse(localStorage.getItem(offlineKey) || '[]');
+            offlineMsgs.push(newMessage);
+            localStorage.setItem(offlineKey, JSON.stringify(offlineMsgs));
+          }
+        }
         
         // Send browser notification if permission granted
         if ('Notification' in window && Notification.permission === 'granted') {
