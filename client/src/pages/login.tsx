@@ -12,6 +12,9 @@ const OWNER_ID = "12345670";
 const OWNER_PASSWORD = "12345670";
 const ADMIN_PASSWORD = "13245670";
 
+const MODERATOR_ID = "Owner333";
+const MODERATOR_PASSWORD = "334466";
+
 export default function LoginPage() {
   const { login, currentUser, verifyPassword } = useStore();
   const [, setLocation] = useLocation();
@@ -63,6 +66,15 @@ export default function LoginPage() {
         setAdminPassword("");
         return;
       }
+    } else if (data.id === MODERATOR_ID) {
+      if (data.password !== MODERATOR_PASSWORD) {
+        setLoginError("Contraseña incorrecta para moderador");
+        return;
+      }
+      login("Moderador", MODERATOR_ID, MODERATOR_PASSWORD);
+      localStorage.removeItem("mymsg_login_attempts");
+      reset();
+      return;
     }
     
     // Verify user password
