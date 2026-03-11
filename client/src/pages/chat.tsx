@@ -64,10 +64,13 @@ export default function ChatPage() {
     const isAudio = file.type.startsWith('audio/');
     const isImage = file.type.startsWith('image/');
     
-    const url = URL.createObjectURL(file);
-    
-    if (isAudio) sendMessage(chat.id, "Mensaje de voz", 'audio', url);
-    else if (isImage) sendMessage(chat.id, "Mensaje de imagen", 'image', url);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Url = reader.result as string;
+      if (isAudio) sendMessage(chat.id, "Mensaje de voz", 'audio', base64Url);
+      else if (isImage) sendMessage(chat.id, "Mensaje de imagen", 'image', base64Url);
+    };
+    reader.readAsDataURL(file);
   };
 
   const startMicrophone = () => {
@@ -82,8 +85,12 @@ export default function ChatPage() {
       
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        const url = URL.createObjectURL(audioBlob);
-        sendMessage(chat.id, "Mensaje de voz", 'audio', url);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Url = reader.result as string;
+          sendMessage(chat.id, "Mensaje de voz", 'audio', base64Url);
+        };
+        reader.readAsDataURL(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
       

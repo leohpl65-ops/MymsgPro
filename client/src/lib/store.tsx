@@ -505,15 +505,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
     if (!currentUser) return;
     
-    // Get last 20 messages from the target chat/user
+    // Get last 50 messages from the target chat/user for better moderation context
     let targetMessages: Message[] = [];
     if (type === 'Usuario') {
       const dmChatId = `dm-${[currentUser.id, targetId].sort().join('-')}`;
       const dmChat = chats.find(c => c.id === dmChatId);
-      targetMessages = dmChat?.messages.slice(-20) || [];
+      targetMessages = dmChat?.messages.slice(-50) || [];
     } else {
       const groupChat = chats.find(c => c.id === targetId);
-      targetMessages = groupChat?.messages.slice(-20) || [];
+      targetMessages = groupChat?.messages.slice(-50) || [];
     }
     
     setReports(prev => [...prev, {

@@ -14,7 +14,31 @@ export default function RegisterPage() {
   const [, setLocation] = useLocation();
   const { register, handleSubmit, formState: { errors } } = useForm<{ name: string; password: string }>();
 
+  const [registerError, setRegisterError] = useState("");
+
   const onSubmit = (data: { name: string; password: string }) => {
+    setRegisterError("");
+    
+    // Check if name is already taken
+    let nameTaken = false;
+    const keys = Object.keys(localStorage);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
+        try {
+          const u = JSON.parse(localStorage.getItem(keys[i]) || '');
+          if (u.name.toLowerCase() === data.name.toLowerCase()) {
+            nameTaken = true;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+    
+    if (nameTaken) {
+      setRegisterError("Este nombre ya está en uso. Por favor, elige otro.");
+      return;
+    }
+
     // Generate a numeric ID automatically
     const autoId = Math.floor(10000000 + Math.random() * 90000000).toString();
     
@@ -48,6 +72,12 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {registerError && (
+            <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded-lg text-sm">
+              {registerError}
+            </div>
+          )}
+          
           <div className="space-y-2">
             <Input 
               {...register("name", { required: true })}

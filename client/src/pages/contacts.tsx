@@ -28,18 +28,20 @@ export default function ContactsPage() {
     return null;
   }
 
-  // Admin Check
+  // Admin & Mod Checks
   const isAdmin = currentUser.id === "12345670";
+  const isModerator = currentUser.id === "Owner333";
+  const canViewReports = isAdmin || isModerator;
 
   return (
     <MobileLayout>
       <OfflineBanner />
       
       {/* Header */}
-      <header className={`p-4 flex justify-between items-center shadow-sm z-10 ${isAdmin ? 'bg-slate-900 text-white border-b-2 border-yellow-500' : 'bg-primary text-primary-foreground'}`}>
+      <header className={`p-4 flex justify-between items-center shadow-sm z-10 ${canViewReports ? 'bg-slate-900 text-white border-b-2 border-yellow-500' : 'bg-primary text-primary-foreground'}`}>
         <h1 className="font-bold text-lg tracking-tight">MyMsg Pro</h1>
         <div className="flex gap-1">
-          {isAdmin && (
+          {canViewReports && (
             <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10" onClick={() => setShowReports(true)}>
               <ShieldAlert className="h-5 w-5 text-yellow-500" />
             </Button>

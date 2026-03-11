@@ -210,6 +210,9 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
   const { reports } = useStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Moderator view has access to more messages
+  const isModerator = useStore().currentUser?.id === "Owner333";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" aria-describedby="reports-dialog">
