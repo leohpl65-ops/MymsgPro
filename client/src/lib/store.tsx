@@ -9,6 +9,7 @@ import { generateUserAvatarSvg, generateGroupAvatarSvg } from "./avatars";
 export interface User {
   id: string;
   name: string;
+  originalName?: string;
   avatar?: string;
   password: string;
   language?: 'es' | 'en';
@@ -221,7 +222,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                         setChats(curr => curr.map(c => c.id === chatId ? {...c, name: uData.name} : c));
                         localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
                       }
-                    });
+                    }).catch(e => console.warn("Error fetching user", e.message));
                   }
                   
                   const newChat: Chat = {
@@ -243,12 +244,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
             if (changed) {
               // Delete the processed messages from Firebase to not read them again
-              remove(fbOfflineRef);
+              remove(fbOfflineRef).catch(e => console.warn("Error removing msgs", e.message));
               return newChats;
             }
             return prevChats;
           });
         }
+      }).catch(e => {
+        // Silently catch permission denied to avoid screen overlay errors
+        console.warn("Firebase offline queue read error:", e.message);
       });
       
       // Check Groups - check the global groups to see if we've been added

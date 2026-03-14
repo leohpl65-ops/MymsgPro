@@ -31,7 +31,7 @@ export default function RegisterPage() {
       if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
         try {
           const u = JSON.parse(localStorage.getItem(keys[i]) || '');
-          if (u.name.toLowerCase() === data.name.toLowerCase()) {
+          if ((u.originalName || u.name).toLowerCase() === data.name.toLowerCase()) {
             nameTaken = true;
             break;
           }
@@ -48,9 +48,11 @@ export default function RegisterPage() {
     const autoId = Math.floor(10000000 + Math.random() * 90000000).toString();
     
     // Register the user in the "database" (localStorage) first
+    // Save the originalName to be used always for login
     const user = { 
       id: autoId, 
       name: data.name, 
+      originalName: data.name,
       password: data.password, 
       avatar: generateUserAvatarSvg(data.name),
       language: navigator.language.startsWith('es') ? 'es' : 'en'
@@ -93,7 +95,7 @@ export default function RegisterPage() {
           <div className="space-y-2">
             <Input 
               {...register("name", { required: true })}
-              placeholder="Tu Nombre" 
+              placeholder="Tu Nombre de Usuario" 
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 h-12"
             />
           </div>
