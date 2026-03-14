@@ -422,11 +422,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChats(prev => [newGroup, ...prev]);
   };
 
-  const joinGroup = (groupId: string) => {
+  const joinGroup = async (groupId: string) => {
     if (!currentUser) return;
     const fullGroupId = groupId.startsWith('group-') ? groupId : `group-${groupId}`;
     
-    // Check global storage first
+    try {
+      const { get, ref, set } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      
+      const groupSnap = await get(ref(db, `groups/${fullGroupId}`));
+      
+      if (groupSnap.exists()) {
+        const globalGroup = groupSnap.val();
+        
+        if (!globalGroup.participants.includes(currentUser.id)) {
+          globalGroup.participants.push(currentUser.id);
+          // Update Firebase
+          await set(ref(db, `groups/${fullGroupId}`), globalGroup);
+        }
+        
+        // Save to local storage for offline access
+        localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(globalGroup));
+        
+        setChats(prev => {
+          const existing = prev.find(c => c.id === fullGroupId);
+          if (existing) return prev;
+          return [globalGroup, ...prev];
+        });
+        return;
+      }
+    } catch (e) {
+      console.error("Firebase join group error", e);
+    }
+    
+    // Fallback: Check global storage first (local fallback)
     const globalGroupStr = localStorage.getItem(`mymsg_global_group_${fullGroupId}`);
     if (globalGroupStr) {
       const globalGroup = JSON.parse(globalGroupStr);
@@ -455,8 +484,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
        const newGroup: Chat = {
          id: fullGroupId,
          type: 'group',
-         name: `Grupo ${groupId}`,
-         avatar: generateGroupAvatarSvg(groupId),
+         name: `Grupo ${groupId.replace('group-', '')}`,
+         avatar: generateGroupAvatarSvg(groupId.replace('group-', '')),
          participants: [currentUser.id],
          messages: [],
          lastMessage: "Te has unido al grupo",
@@ -464,6 +493,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
          userId: currentUser.id
        };
        localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(newGroup));
+       
+       // Try to create it in Firebase too
+       try {
+         const { set, ref } = await import("firebase/database");
+         const { db } = await import("@/lib/firebase");
+         await set(ref(db, `groups/${fullGroupId}`), newGroup);
+       } catch(e) {}
+       
        setChats(prev => [newGroup, ...prev]);
     }
   };
