@@ -7,18 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, Lock } from "lucide-react";
 import { motion } from "framer-motion";
+import { ref, get } from "firebase/database";
+import { db } from "@/lib/firebase";
 
-const OWNER_ID = "12345670";
 const OWNER_PASSWORD = "12345670";
 const ADMIN_PASSWORD = "13245670";
-
-const MODERATOR_ID = "Owner333";
 const MODERATOR_PASSWORD = "334466";
 
 export default function LoginPage() {
-  const { login, currentUser, verifyPassword } = useStore();
+  const { login, currentUser } = useStore();
   const [, setLocation] = useLocation();
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ id: string; password: string }>();
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<{ name: string; password: string }>();
   const [adminPassword, setAdminPassword] = useState("");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -39,7 +38,7 @@ export default function LoginPage() {
     return 0;
   });
 
-  const onSubmit = async (data: { id: string; password: string }) => {
+  const onSubmit = async (data: { name: string; password: string }) => {
     setLoginError("");
     
     if (loginAttempts >= 7) {
@@ -54,8 +53,29 @@ export default function LoginPage() {
       }
     }
     
-    // If trying to login as Owner/Admin, require admin password
-    if (data.id === OWNER_ID) {
+    // Check local storage for all users to find one that matches the name (case insensitive)
+    let foundUser = null;
+    let originalName = data.name;
+    let foundUserId = "";
+    
+    const keys = Object.keys(localStorage);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
+        try {
+          const u = JSON.parse(localStorage.getItem(keys[i]) || '');
+          // Check originalName (which is the permanent login name)
+          if (u.originalName?.toLowerCase() === data.name.toLowerCase() || 
+              (!u.originalName && u.name.toLowerCase() === data.name.toLowerCase())) {
+            foundUser = u;
+            foundUserId = u.id;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+    
+    // Check if it's admin or owner trying to login by name
+    if (data.name.toLowerCase() === 'owner') {
       if (!adminPassword) {
         setLoginError("Se requiere código de administrador");
         setShowAdminPassword(true);
@@ -66,20 +86,39 @@ export default function LoginPage() {
         setAdminPassword("");
         return;
       }
-    } else if (data.id === MODERATOR_ID) {
+      foundUserId = "12345670";
+      foundUser = { id: "12345670", password: "12345670" }; // Dummy object to pass validation
+    } else if (data.name.toLowerCase() === 'moderador' || data.name.toLowerCase() === 'moderator') {
       if (data.password !== MODERATOR_PASSWORD) {
         setLoginError("Contraseña incorrecta para moderador");
         return;
       }
-      await login("Moderador", MODERATOR_ID, MODERATOR_PASSWORD);
+      await login("Moderador", "Owner333", MODERATOR_PASSWORD);
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       return;
     }
     
+    if (!foundUser) {
+      // Try to see if this is an ID (fallback for old users)
+      for (let i = 0; i < keys.length; i++) {
+        if (keys[i] === `mymsg_user_${data.name}`) {
+          try {
+            foundUser = JSON.parse(localStorage.getItem(keys[i]) || '');
+            foundUserId = data.name;
+            break;
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (!foundUser) {
+       setLoginError("Usuario no encontrado.");
+       return;
+    }
+
     // Verify user password
-    const isPasswordValid = verifyPassword(data.id, data.password);
-    if (!isPasswordValid) {
+    if (foundUser.password !== data.password) {
       const newAttempts = loginAttempts + 1;
       setLoginAttempts(newAttempts);
       localStorage.setItem("mymsg_login_attempts", JSON.stringify({ count: newAttempts, timestamp: Date.now() }));
@@ -87,23 +126,8 @@ export default function LoginPage() {
       return;
     }
     
-    // Attempt login with stored user data if available
     try {
-      const savedUserStr = localStorage.getItem(`mymsg_user_${data.id}`);
-      let finalName = data.id === OWNER_ID ? "Owner" : "Usuario";
-      
-      if (savedUserStr) {
-        try {
-          const savedUser = JSON.parse(savedUserStr);
-          if (savedUser && savedUser.name) {
-             finalName = savedUser.name;
-          }
-        } catch(e) {
-          // Keep default finalName
-        }
-      }
-
-      await login(finalName, data.id, data.password);
+      await login(foundUser.name, foundUserId, data.password);
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       setAdminPassword("");
@@ -143,9 +167,9 @@ export default function LoginPage() {
           
           <div className="space-y-2">
             <Input 
-              {...register("id", { required: true })}
+              {...register("name", { required: true })}
               type="text"
-              placeholder="ID de Usuario" 
+              placeholder="Nombre de usuario" 
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 h-12"
             />
           </div>

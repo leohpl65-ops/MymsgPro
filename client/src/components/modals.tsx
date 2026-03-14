@@ -27,6 +27,8 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
       return;
     }
     
+    // Solo actualiza el nombre para visualización, 
+    // el originalName permanece igual (se guarda en updateUser si no se sobreescribe)
     updateUser({ name });
     onOpenChange(false);
   };
