@@ -211,7 +211,7 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Moderator view has access to more messages
-  const isModerator = useStore().currentUser?.id === "Owner333" || useStore().currentUser?.id === "leo33445";
+  const isModerator = useStore().currentUser?.id === "Owner333" || useStore().currentUser?.id === "12345670";
 
   const handleBan = (reportId: string, targetName: string) => {
     alert(`El usuario ${targetName} ha sido baneado exitosamente del sistema.`);
