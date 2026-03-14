@@ -167,6 +167,7 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
       const { db } = await import("@/lib/firebase");
       
       const userSnap = await get(ref(db, `users/${friendId}`));
+      
       if (userSnap.exists()) {
         const user = userSnap.val();
         const success = addContact(friendId, user.name);
@@ -178,10 +179,43 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
           setError("Ya tienes a este usuario en tus contactos");
         }
       } else {
+        // Fallback: check localStorage for local testing
+        const { getAllUsers } = useStore.getState();
+        const allUsers = getAllUsers();
+        if (allUsers.has(friendId)) {
+           const localUser = allUsers.get(friendId);
+           const success = addContact(friendId, localUser?.name || friendId);
+           if (success) {
+             setFriendId("");
+             setError("");
+             onOpenChange(false);
+             return;
+           } else {
+             setError("Ya tienes a este usuario en tus contactos");
+             return;
+           }
+        }
         setError("Usuario incorrecto o inexistente");
       }
     } catch (e) {
-      setError("Error al buscar usuario");
+      console.error(e);
+      // Fallback: check localStorage for local testing on Firebase error
+      const { getAllUsers } = useStore.getState();
+      const allUsers = getAllUsers();
+      if (allUsers.has(friendId)) {
+         const localUser = allUsers.get(friendId);
+         const success = addContact(friendId, localUser?.name || friendId);
+         if (success) {
+           setFriendId("");
+           setError("");
+           onOpenChange(false);
+           return;
+         } else {
+           setError("Ya tienes a este usuario en tus contactos");
+           return;
+         }
+      }
+      setError("Error al buscar usuario: Es posible que no exista o haya un problema de conexión");
     }
   };
 
