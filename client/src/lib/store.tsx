@@ -162,6 +162,103 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser]);
 
+  // Periodic check for new offline messages and auto-add contacts
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const checkOfflineMessages = () => {
+      const keys = Object.keys(localStorage);
+      let chatsUpdated = false;
+
+      // Also check global groups for updates
+      setChats(prevChats => {
+        let newChats = [...prevChats];
+        let changed = false;
+
+        keys.forEach(key => {
+          // Check DMs
+          if (key.startsWith(`mymsg_offline_msgs_${currentUser.id}_from_`)) {
+            const senderId = key.split('_from_')[1];
+            const offlineMsgs = JSON.parse(localStorage.getItem(key) || '[]');
+            
+            if (offlineMsgs.length > 0) {
+              const chatId = `dm-${[currentUser.id, senderId].sort().join('-')}`;
+              const chatIndex = newChats.findIndex(c => c.id === chatId);
+              
+              if (chatIndex >= 0) {
+                // Add to existing chat
+                newChats[chatIndex] = {
+                  ...newChats[chatIndex],
+                  messages: [...newChats[chatIndex].messages, ...offlineMsgs],
+                  lastMessage: offlineMsgs[offlineMsgs.length - 1].type === 'text' ? offlineMsgs[offlineMsgs.length - 1].text : 'Archivo multimedia',
+                  lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp
+                };
+              } else {
+                // Auto-create chat for unknown contact
+                let senderName = senderId;
+                const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
+                if (senderUserStr) {
+                  senderName = JSON.parse(senderUserStr).name;
+                }
+                
+                const newChat: Chat = {
+                  id: chatId,
+                  type: 'direct',
+                  name: senderName,
+                  avatar: generateUserAvatarSvg(senderId),
+                  participants: [currentUser.id, senderId],
+                  messages: offlineMsgs,
+                  lastMessage: offlineMsgs[offlineMsgs.length - 1].type === 'text' ? offlineMsgs[offlineMsgs.length - 1].text : 'Archivo multimedia',
+                  lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp,
+                  userId: currentUser.id
+                };
+                newChats = [newChat, ...newChats];
+              }
+              
+              localStorage.removeItem(key);
+              changed = true;
+            }
+          }
+          
+          // Check Groups
+          if (key.startsWith('mymsg_global_group_')) {
+            const globalGroup = JSON.parse(localStorage.getItem(key) || '{}');
+            if (globalGroup && globalGroup.participants && globalGroup.participants.includes(currentUser.id)) {
+              const chatIndex = newChats.findIndex(c => c.id === globalGroup.id);
+              if (chatIndex >= 0) {
+                if (newChats[chatIndex].messages.length < globalGroup.messages.length) {
+                  newChats[chatIndex] = {
+                    ...newChats[chatIndex],
+                    name: globalGroup.name,
+                    messages: globalGroup.messages,
+                    lastMessage: globalGroup.lastMessage,
+                    lastMessageTime: globalGroup.lastMessageTime,
+                    participants: globalGroup.participants
+                  };
+                  changed = true;
+                }
+              } else {
+                // We were added to a group!
+                newChats = [{...globalGroup, userId: currentUser.id}, ...newChats];
+                changed = true;
+              }
+            }
+          }
+        });
+
+        if (changed) {
+          chatsUpdated = true;
+          return newChats;
+        }
+        return prevChats;
+      });
+    };
+
+    // Check every 2 seconds to simulate real-time communication across tabs/windows
+    const interval = setInterval(checkOfflineMessages, 2000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
   const login = (name: string, id: string, password: string) => {
     // Check if account exists
     const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
@@ -406,7 +503,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             localStorage.setItem(`mymsg_global_group_${c.id}`, JSON.stringify(globalGroup));
           }
         } else {
-          // Store offline message for the other user
+          // Send message globally to the other person (works across tabs/windows)
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId) {
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
