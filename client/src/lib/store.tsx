@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { nanoid } from "nanoid";
 import { censorMessage } from "./censor";
+import { ref, onValue, set, get, child, update, push, remove } from "firebase/database";
+import { db } from "./firebase";
 import { generateUserAvatarSvg, generateGroupAvatarSvg } from "./avatars";
 
 // --- Types ---
@@ -10,6 +12,7 @@ export interface User {
   avatar?: string;
   password: string;
   language?: 'es' | 'en';
+  status?: string; // added to match the login usage
 }
 
 export interface Message {
@@ -51,7 +54,7 @@ export interface Report {
 interface StoreContextType {
   currentUser: User | null;
   isOnline: boolean;
-  login: (name: string, id: string, password: string) => void;
+  login: (name: string, id: string, password: string) => Promise<void>;
   verifyPassword: (id: string, password: string) => boolean;
   logout: () => void;
   chats: Chat[];
@@ -168,60 +171,93 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     
     const checkOfflineMessages = () => {
-      const keys = Object.keys(localStorage);
-      let chatsUpdated = false;
+      // Sync with Firebase real-time database instead of just polling localStorage
+      // We will listen to the offline messages queue for this user
+      const fbOfflineRef = ref(db, `offline_messages/${currentUser.id}`);
+      get(fbOfflineRef).then((snapshot) => {
+        if (snapshot.exists()) {
+          const sendersData = snapshot.val();
+          
+          setChats(prevChats => {
+            let newChats = [...prevChats];
+            let changed = false;
 
-      // Also check global groups for updates
+            Object.keys(sendersData).forEach(senderKey => {
+              // senderKey is like "from_123456"
+              const senderId = senderKey.replace('from_', '');
+              const messagesObj = sendersData[senderKey];
+              const fbMsgs: Message[] = Object.values(messagesObj);
+              
+              if (fbMsgs.length > 0) {
+                const chatId = `dm-${[currentUser.id, senderId].sort().join('-')}`;
+                const chatIndex = newChats.findIndex(c => c.id === chatId);
+                
+                // Add to existing chat
+                if (chatIndex >= 0) {
+                  // Make sure we don't add duplicates by checking msg IDs
+                  const existingMsgIds = new Set(newChats[chatIndex].messages.map(m => m.id));
+                  const newMsgs = fbMsgs.filter(m => !existingMsgIds.has(m.id));
+                  
+                  if (newMsgs.length > 0) {
+                    newChats[chatIndex] = {
+                      ...newChats[chatIndex],
+                      messages: [...newChats[chatIndex].messages, ...newMsgs],
+                      lastMessage: newMsgs[newMsgs.length - 1].type === 'text' ? newMsgs[newMsgs.length - 1].text : 'Archivo multimedia',
+                      lastMessageTime: newMsgs[newMsgs.length - 1].timestamp
+                    };
+                    changed = true;
+                  }
+                } else {
+                  // Auto-create chat for unknown contact from Firebase
+                  let senderName = senderId;
+                  const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
+                  if (senderUserStr) {
+                    senderName = JSON.parse(senderUserStr).name;
+                  } else {
+                    // Try to get from Firebase if not local
+                    get(ref(db, `users/${senderId}`)).then(uSnap => {
+                      if (uSnap.exists()) {
+                        const uData = uSnap.val();
+                        setChats(curr => curr.map(c => c.id === chatId ? {...c, name: uData.name} : c));
+                        localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
+                      }
+                    });
+                  }
+                  
+                  const newChat: Chat = {
+                    id: chatId,
+                    type: 'direct',
+                    name: senderName,
+                    avatar: generateUserAvatarSvg(senderId),
+                    participants: [currentUser.id, senderId],
+                    messages: fbMsgs,
+                    lastMessage: fbMsgs[fbMsgs.length - 1].type === 'text' ? fbMsgs[fbMsgs.length - 1].text : 'Archivo multimedia',
+                    lastMessageTime: fbMsgs[fbMsgs.length - 1].timestamp,
+                    userId: currentUser.id
+                  };
+                  newChats = [newChat, ...newChats];
+                  changed = true;
+                }
+              }
+            });
+
+            if (changed) {
+              // Delete the processed messages from Firebase to not read them again
+              remove(fbOfflineRef);
+              return newChats;
+            }
+            return prevChats;
+          });
+        }
+      });
+      
+      // Check Groups - check the global groups to see if we've been added
       setChats(prevChats => {
         let newChats = [...prevChats];
         let changed = false;
-
+        
+        const keys = Object.keys(localStorage);
         keys.forEach(key => {
-          // Check DMs
-          if (key.startsWith(`mymsg_offline_msgs_${currentUser.id}_from_`)) {
-            const senderId = key.split('_from_')[1];
-            const offlineMsgs = JSON.parse(localStorage.getItem(key) || '[]');
-            
-            if (offlineMsgs.length > 0) {
-              const chatId = `dm-${[currentUser.id, senderId].sort().join('-')}`;
-              const chatIndex = newChats.findIndex(c => c.id === chatId);
-              
-              if (chatIndex >= 0) {
-                // Add to existing chat
-                newChats[chatIndex] = {
-                  ...newChats[chatIndex],
-                  messages: [...newChats[chatIndex].messages, ...offlineMsgs],
-                  lastMessage: offlineMsgs[offlineMsgs.length - 1].type === 'text' ? offlineMsgs[offlineMsgs.length - 1].text : 'Archivo multimedia',
-                  lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp
-                };
-              } else {
-                // Auto-create chat for unknown contact
-                let senderName = senderId;
-                const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
-                if (senderUserStr) {
-                  senderName = JSON.parse(senderUserStr).name;
-                }
-                
-                const newChat: Chat = {
-                  id: chatId,
-                  type: 'direct',
-                  name: senderName,
-                  avatar: generateUserAvatarSvg(senderId),
-                  participants: [currentUser.id, senderId],
-                  messages: offlineMsgs,
-                  lastMessage: offlineMsgs[offlineMsgs.length - 1].type === 'text' ? offlineMsgs[offlineMsgs.length - 1].text : 'Archivo multimedia',
-                  lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp,
-                  userId: currentUser.id
-                };
-                newChats = [newChat, ...newChats];
-              }
-              
-              localStorage.removeItem(key);
-              changed = true;
-            }
-          }
-          
-          // Check Groups
           if (key.startsWith('mymsg_global_group_')) {
             const globalGroup = JSON.parse(localStorage.getItem(key) || '{}');
             if (globalGroup && globalGroup.participants && globalGroup.participants.includes(currentUser.id)) {
@@ -248,7 +284,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
 
         if (changed) {
-          chatsUpdated = true;
           return newChats;
         }
         return prevChats;
@@ -260,17 +295,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  const login = (name: string, id: string, password: string) => {
-    // Check if account exists
-    const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+  const login = async (name: string, id: string, password: string) => {
+    // Check local first
+    let savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+    
+    // Check Firebase
+    try {
+      const userSnap = await get(ref(db, `users/${id}`));
+      if (userSnap.exists()) {
+        const fbUser = userSnap.val();
+        localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(fbUser));
+        savedUserStr = JSON.stringify(fbUser);
+      }
+    } catch (e) {
+      console.error("Firebase fetch error", e);
+    }
+
     if (!savedUserStr && id !== '12345670') {
-      throw new Error("esta cuenta no existe. Prueba otra ves");
+      throw new Error("Esta cuenta no existe. Prueba otra vez.");
     }
 
     if (savedUserStr) {
       const savedUser = JSON.parse(savedUserStr);
       savedUser.name = name;
       localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(savedUser));
+      // Update Firebase
+      set(ref(db, `users/${id}`), savedUser).catch(console.error);
     }
 
     const user: User = { 
@@ -331,10 +381,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
-    const savedUser = localStorage.getItem(`mymsg_user_${id}`);
-    if (!savedUser) return true; // First login, accept any password
+    let savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+    
+    if (!savedUserStr) return true; // First login, accept any password
     try {
-      const user = JSON.parse(savedUser);
+      const user = JSON.parse(savedUserStr);
       return user.password === password;
     } catch {
       return false;
@@ -493,8 +544,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           lastInteractionDay: today
         };
         
-        // Broadcast for groups or handle offline for DMs (Mock)
+        // Broadcast for groups or handle offline for DMs (Firebase)
         if (c.type === 'group') {
+          const globalGroupRef = ref(db, `groups/${c.id}`);
+          set(globalGroupRef, {
+            ...updatedChat,
+            messages: updatedChat.messages
+          });
+          
           const globalGroupStr = localStorage.getItem(`mymsg_global_group_${c.id}`);
           if (globalGroupStr) {
             const globalGroup = JSON.parse(globalGroupStr);
@@ -504,9 +561,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             localStorage.setItem(`mymsg_global_group_${c.id}`, JSON.stringify(globalGroup));
           }
         } else {
-          // Send message globally to the other person (works across tabs/windows)
+          // Send message to global Firebase queue for the recipient
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId) {
+            const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
+            set(fbMsgRef, newMessage);
+
+            // Keep local fallback just in case
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
             const offlineMsgs = JSON.parse(localStorage.getItem(offlineKey) || '[]');
             offlineMsgs.push(newMessage);
@@ -570,7 +631,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const user = JSON.parse(localStorage.getItem(key) || '');
           users.set(user.id, user);
         } catch (e) {
-          // ignore parse errors
+          // Ignore parse errors
         }
       }
     });
@@ -579,42 +640,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateUser = (updates: Partial<User>) => {
     if (!currentUser) return;
-    setCurrentUser({ ...currentUser, ...updates });
+    const updatedUser = { ...currentUser, ...updates };
+    setCurrentUser(updatedUser);
+    localStorage.setItem(`mymsg_user_${currentUser.id}`, JSON.stringify(updatedUser));
   };
 
   const updateGroup = (groupId: string, updates: Partial<Chat>) => {
-    setChats(prev => prev.map(c => c.id === groupId ? { ...c, ...updates } : c));
-  };
-
-  const forgetChat = (chatId: string) => {
-    if (!currentUser) return;
-    setChats(prev => prev.filter(c => c.id !== chatId));
-  };
-
-  const clearChatMessages = (chatId: string) => {
-    if (!currentUser) return;
     setChats(prev => prev.map(c => 
-      c.id === chatId 
-        ? { ...c, messages: [], lastMessage: '', lastMessageTime: Date.now() }
-        : c
+      c.id === groupId ? { ...c, ...updates } : c
     ));
+    
+    // Update global storage
+    const globalGroupStr = localStorage.getItem(`mymsg_global_group_${groupId}`);
+    if (globalGroupStr) {
+      const globalGroup = JSON.parse(globalGroupStr);
+      localStorage.setItem(`mymsg_global_group_${groupId}`, JSON.stringify({ ...globalGroup, ...updates }));
+    }
   };
 
   const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
     if (!currentUser) return;
     
-    // Get last 50 messages from the target chat/user for better moderation context
-    let targetMessages: Message[] = [];
-    if (type === 'Usuario') {
-      const dmChatId = `dm-${[currentUser.id, targetId].sort().join('-')}`;
-      const dmChat = chats.find(c => c.id === dmChatId);
-      targetMessages = dmChat?.messages.slice(-50) || [];
-    } else {
-      const groupChat = chats.find(c => c.id === targetId);
-      targetMessages = groupChat?.messages.slice(-50) || [];
-    }
-    
-    setReports(prev => [...prev, {
+    // Get last few messages as evidence
+    const chat = chats.find(c => c.id === targetId || c.participants.includes(targetId));
+    const targetMessages = chat ? chat.messages.slice(-5) : [];
+
+    const newReport: Report = {
       id: nanoid(),
       type,
       targetId,
@@ -622,7 +673,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       reporterId: currentUser.id,
       timestamp: Date.now(),
       targetMessages
-    }]);
+    };
+
+    setReports(prev => [newReport, ...prev]);
   };
 
   const deleteReport = (reportId: string) => {
@@ -630,23 +683,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const setChatWallpaper = (chatId: string, url: string) => {
-    setChats(prev => prev.map(c => c.id === chatId ? { ...c, wallpaper: url } : c));
-  };
-
-  const deleteMessage = (chatId: string, messageId: string) => {
     setChats(prev => prev.map(c => 
-      c.id === chatId 
-        ? { ...c, messages: c.messages.filter(m => m.id !== messageId) }
-        : c
+      c.id === chatId ? { ...c, wallpaper: url } : c
     ));
   };
 
+  const forgetChat = (chatId: string) => {
+    setChats(prev => prev.filter(c => c.id !== chatId));
+  };
+
+  const clearChatMessages = (chatId: string) => {
+    setChats(prev => prev.map(c => {
+      if (c.id === chatId) {
+        return { ...c, messages: [], lastMessage: undefined, lastMessageTime: undefined };
+      }
+      return c;
+    }));
+  };
+
+  const deleteMessage = (chatId: string, messageId: string) => {
+    if (!currentUser) return;
+    
+    setChats(prev => prev.map(c => {
+      if (c.id === chatId) {
+        const messageToDelete = c.messages.find(m => m.id === messageId);
+        // Only allow deleting own messages
+        if (messageToDelete && messageToDelete.senderId === currentUser.id) {
+          const newMessages = c.messages.filter(m => m.id !== messageId);
+          return { 
+            ...c, 
+            messages: newMessages,
+            lastMessage: newMessages.length > 0 ? 
+              (newMessages[newMessages.length - 1].type === 'text' ? newMessages[newMessages.length - 1].text : 'Archivo multimedia') 
+              : undefined,
+            lastMessageTime: newMessages.length > 0 ? newMessages[newMessages.length - 1].timestamp : undefined
+          };
+        }
+      }
+      return c;
+    }));
+  };
+
   const markChatAsRead = (chatId: string) => {
+    if (!currentUser) return;
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
         return {
           ...c,
-          messages: c.messages.map(m => m.senderId !== currentUser?.id ? { ...m, read: true } : m)
+          messages: c.messages.map(m => 
+            m.senderId !== currentUser.id ? { ...m, read: true } : m
+          )
         };
       }
       return c;
@@ -655,94 +741,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const replyToMessage = (chatId: string, messageId: string, replyText: string) => {
     if (!currentUser) return;
-    const chat = chats.find(c => c.id === chatId);
-    if (!chat) return;
-    const originalMessage = chat.messages.find(m => m.id === messageId);
-    if (!originalMessage) return;
     
-    const censoredText = censorMessage(replyText);
-    const newMessage: Message = {
-      id: nanoid(),
-      senderId: currentUser.id,
-      text: `📌 Respuesta a ${originalMessage.senderId}: ${censoredText}`,
-      timestamp: Date.now(),
-      type: 'text',
-      status: 'sent',
-      read: false
-    };
-
-    setChats(prev => prev.map(c => {
-      if (c.id === chatId) {
-        return {
-          ...c,
-          messages: [...c.messages, newMessage],
-          lastMessage: censoredText,
-          lastMessageTime: newMessage.timestamp
-        };
-      }
-      return c;
-    }));
+    const chat = getChat(chatId);
+    const messageToReplyTo = chat?.messages.find(m => m.id === messageId);
+    
+    if (messageToReplyTo) {
+      const formattedReplyText = `[Respondiendo a: ${messageToReplyTo.text.substring(0, 30)}${messageToReplyTo.text.length > 30 ? '...' : ''}]\n${replyText}`;
+      sendMessage(chatId, formattedReplyText, 'text');
+    }
   };
 
   const forwardMessage = (fromChatId: string, messageId: string, toChatId: string) => {
     if (!currentUser) return;
-    const fromChat = chats.find(c => c.id === fromChatId);
-    if (!fromChat) return;
-    const originalMessage = fromChat.messages.find(m => m.id === messageId);
-    if (!originalMessage) return;
     
-    const newMessage: Message = {
-      id: nanoid(),
-      senderId: currentUser.id,
-      text: `↪️ Reenviado: ${originalMessage.text}`,
-      timestamp: Date.now(),
-      type: originalMessage.type,
-      mediaUrl: originalMessage.mediaUrl,
-      status: 'sent',
-      read: false
-    };
+    const chat = getChat(fromChatId);
+    const messageToForward = chat?.messages.find(m => m.id === messageId);
+    
+    if (messageToForward) {
+      const prefix = "[Reenviado] ";
+      const text = messageToForward.type === 'text' ? `${prefix}${messageToForward.text}` : prefix;
+      sendMessage(toChatId, text, messageToForward.type, messageToForward.mediaUrl);
+    }
+  };
 
-    setChats(prev => prev.map(c => {
-      if (c.id === toChatId) {
-        return {
-          ...c,
-          messages: [...c.messages, newMessage],
-          lastMessage: originalMessage.text,
-          lastMessageTime: newMessage.timestamp
-        };
-      }
-      return c;
-    }));
+  const value: StoreContextType = {
+    currentUser,
+    isOnline,
+    login,
+    verifyPassword,
+    logout,
+    chats,
+    createGroup,
+    joinGroup,
+    addContact,
+    sendMessage,
+    getChat,
+    updateUser,
+    updateGroup,
+    reports,
+    reportEntity,
+    setChatWallpaper,
+    getChatMessages,
+    getAllUsers,
+    forgetChat,
+    clearChatMessages,
+    deleteMessage,
+    deleteReport,
+    markChatAsRead,
+    replyToMessage,
+    forwardMessage
   };
 
   return (
-    <StoreContext.Provider value={{
-      currentUser,
-      isOnline,
-      login,
-      verifyPassword,
-      logout,
-      chats,
-      createGroup,
-      joinGroup,
-      addContact,
-      sendMessage,
-      getChat,
-      updateUser,
-      updateGroup,
-      reports,
-      reportEntity,
-      setChatWallpaper,
-      getChatMessages,
-      getAllUsers,
-      forgetChat,
-      clearChatMessages,
-      deleteMessage,
-      deleteReport,
-      markChatAsRead,
-      replyToMessage,
-      forwardMessage
-    }}>
+    <StoreContext.Provider value={value}>
       {children}
     </StoreContext.Provider>
   );
@@ -750,6 +801,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
 export function useStore() {
   const context = useContext(StoreContext);
-  if (!context) throw new Error("useStore must be used within StoreProvider");
+  if (context === undefined) {
+    throw new Error("useStore must be used within a StoreProvider");
+  }
   return context;
 }

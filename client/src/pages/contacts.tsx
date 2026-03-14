@@ -31,12 +31,7 @@ export default function ContactsPage() {
   // Admin & Mod Checks
   const isAdmin = currentUser.id === "12345670";
   const isModerator = currentUser.id === "Owner333";
-  const isLeo = currentUser.id === "leo33445";
-  const canViewReports = isAdmin || isModerator || isLeo;
-
-  const handleUpgradeApp = () => {
-    alert("¡Para conectar la base de datos mundial, por favor acepta la solicitud de 'Upgrade a Full-Stack' en el chat con la IA!");
-  };
+  const canViewReports = isAdmin || isModerator;
 
   return (
     <MobileLayout>
@@ -46,11 +41,6 @@ export default function ContactsPage() {
       <header className={`p-4 flex justify-between items-center shadow-sm z-10 ${canViewReports ? 'bg-slate-900 text-white border-b-2 border-yellow-500' : 'bg-primary text-primary-foreground'}`}>
         <h1 className="font-bold text-lg tracking-tight">MyMsg Pro</h1>
         <div className="flex gap-1 items-center">
-          {isLeo && (
-            <Button size="sm" variant="ghost" className="h-8 hover:bg-white/10 text-green-400 text-xs font-bold" onClick={handleUpgradeApp}>
-              ACTUALIZAR MUNDIAL
-            </Button>
-          )}
           {canViewReports && (
             <Button size="sm" variant="ghost" className="h-8 hover:bg-white/10 text-yellow-500 flex items-center" onClick={() => setShowReports(true)}>
               <span className="font-bold text-xs mr-1">OWNER</span>

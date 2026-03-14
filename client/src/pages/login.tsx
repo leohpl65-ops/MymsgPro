@@ -39,7 +39,7 @@ export default function LoginPage() {
     return 0;
   });
 
-  const onSubmit = (data: { id: string; password: string }) => {
+  const onSubmit = async (data: { id: string; password: string }) => {
     setLoginError("");
     
     if (loginAttempts >= 7) {
@@ -71,23 +71,15 @@ export default function LoginPage() {
         setLoginError("Contraseña incorrecta para moderador");
         return;
       }
-      login("Moderador", MODERATOR_ID, MODERATOR_PASSWORD);
-      localStorage.removeItem("mymsg_login_attempts");
-      reset();
-      return;
-    } else if (data.id === "leo33445") {
-      if (data.password !== "334455") {
-        setLoginError("Contraseña incorrecta");
-        return;
-      }
-      login("leo33445", "leo33445", "334455");
+      await login("Moderador", MODERATOR_ID, MODERATOR_PASSWORD);
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       return;
     }
     
     // Verify user password
-    if (!verifyPassword(data.id, data.password)) {
+    const isPasswordValid = verifyPassword(data.id, data.password);
+    if (!isPasswordValid) {
       const newAttempts = loginAttempts + 1;
       setLoginAttempts(newAttempts);
       localStorage.setItem("mymsg_login_attempts", JSON.stringify({ count: newAttempts, timestamp: Date.now() }));
@@ -95,13 +87,23 @@ export default function LoginPage() {
       return;
     }
     
-    // Get existing user name from localStorage if possible
-    let existingName = "Usuario";
-    const savedUser = localStorage.getItem(`mymsg_user_${data.id}`);
-    
+    // Attempt login with stored user data if available
     try {
-      const finalName = data.id === OWNER_ID ? "Owner" : (savedUser ? JSON.parse(savedUser).name : existingName);
-      login(finalName, data.id, data.password);
+      const savedUserStr = localStorage.getItem(`mymsg_user_${data.id}`);
+      let finalName = data.id === OWNER_ID ? "Owner" : "Usuario";
+      
+      if (savedUserStr) {
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          if (savedUser && savedUser.name) {
+             finalName = savedUser.name;
+          }
+        } catch(e) {
+          // Keep default finalName
+        }
+      }
+
+      await login(finalName, data.id, data.password);
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       setAdminPassword("");
