@@ -155,24 +155,31 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
   const [friendId, setFriendId] = useState("");
   const [error, setError] = useState("");
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     setError("");
     if (!friendId.trim()) return;
     
-    // Get user info
-    const users = getAllUsers();
-    const user = users.get(friendId);
-    
-    if (!user) {
-      setError("Usuario incorrecto o inexistente");
-      return;
-    }
-    
-    const success = addContact(friendId, user.name);
-    if (success) {
-      setFriendId("");
-      setError("");
-      onOpenChange(false);
+    // Check Firebase for the user
+    try {
+      const { get, ref } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      
+      const userSnap = await get(ref(db, `users/${friendId}`));
+      if (userSnap.exists()) {
+        const user = userSnap.val();
+        const success = addContact(friendId, user.name);
+        if (success) {
+          setFriendId("");
+          setError("");
+          onOpenChange(false);
+        } else {
+          setError("Ya tienes a este usuario en tus contactos");
+        }
+      } else {
+        setError("Usuario incorrecto o inexistente");
+      }
+    } catch (e) {
+      setError("Error al buscar usuario");
     }
   };
 

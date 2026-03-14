@@ -486,12 +486,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true;
     }
     
-    // For regular users - check if exists (check localStorage for that user)
-    const userExists = localStorage.getItem(`mymsg_user_${contactId}`) !== null;
-    if (!userExists) {
-      return false; // User doesn't exist
-    }
-    
     const existing = chats.find(c => c.type === 'direct' && c.participants.includes(contactId) && c.participants.includes(currentUser.id));
     if (existing) return false;
 
