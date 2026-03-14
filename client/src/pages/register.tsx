@@ -19,6 +19,11 @@ export default function RegisterPage() {
   const onSubmit = (data: { name: string; password: string }) => {
     setRegisterError("");
     
+    if (data.name.toLowerCase() === 'leo33445') {
+      setRegisterError("Este nombre está reservado y no puede ser usado.");
+      return;
+    }
+
     // Check if name is already taken
     let nameTaken = false;
     const keys = Object.keys(localStorage);

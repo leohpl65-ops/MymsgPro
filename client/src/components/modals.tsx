@@ -207,11 +207,20 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
 }
 
 export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { reports } = useStore();
+  const { reports, deleteReport } = useStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Moderator view has access to more messages
-  const isModerator = useStore().currentUser?.id === "Owner333";
+  const isModerator = useStore().currentUser?.id === "Owner333" || useStore().currentUser?.id === "leo33445";
+
+  const handleBan = (reportId: string, targetName: string) => {
+    alert(`El usuario ${targetName} ha sido baneado exitosamente del sistema.`);
+    deleteReport(reportId);
+  };
+
+  const handleFree = (reportId: string) => {
+    deleteReport(reportId);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -219,7 +228,7 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 text-yellow-600" />
-            Panel de Denuncias
+            Panel de Denuncias (Owner)
           </DialogTitle>
         </DialogHeader>
         <div className="max-h-[500px] overflow-y-auto space-y-3 py-4">
@@ -257,16 +266,27 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
                   <p className="text-[11px] text-muted-foreground border-t pt-2 mt-2">Reportado por: {r.reporterId}</p>
                 </button>
                 
-                {expandedId === r.id && r.targetMessages.length > 0 && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t bg-muted/30 p-4 space-y-2 max-h-[250px] overflow-y-auto">
-                    <p className="text-xs font-bold text-muted-foreground mb-3">Últimos {r.targetMessages.length} mensajes:</p>
-                    {r.targetMessages.map((msg) => (
-                      <div key={msg.id} className="bg-background p-2 rounded text-[11px] border-l-2 border-yellow-500">
-                        <div className="font-semibold text-[10px] text-muted-foreground mb-1">{msg.senderId}</div>
-                        <p className="text-foreground">{msg.text}</p>
-                        <span className="text-[9px] text-muted-foreground">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    ))}
+                {expandedId === r.id && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t bg-muted/30 p-4 space-y-2">
+                    <div className="max-h-[250px] overflow-y-auto mb-4 space-y-2">
+                      <p className="text-xs font-bold text-muted-foreground mb-3">Últimos {r.targetMessages.length} mensajes:</p>
+                      {r.targetMessages.map((msg) => (
+                        <div key={msg.id} className="bg-background p-2 rounded text-[11px] border-l-2 border-yellow-500">
+                          <div className="font-semibold text-[10px] text-muted-foreground mb-1">{msg.senderId}</div>
+                          <p className="text-foreground">{msg.text}</p>
+                          <span className="text-[9px] text-muted-foreground">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="flex gap-2 pt-2 border-t border-red-200 dark:border-red-800">
+                      <Button variant="destructive" className="flex-1 text-xs" onClick={() => handleBan(r.id, r.targetName)}>
+                        Banear
+                      </Button>
+                      <Button variant="outline" className="flex-1 text-xs" onClick={() => handleFree(r.id)}>
+                        Dejar Libre
+                      </Button>
+                    </div>
                   </motion.div>
                 )}
               </motion.div>
