@@ -70,6 +70,7 @@ interface StoreContextType {
   forgetChat: (chatId: string) => void;
   clearChatMessages: (chatId: string) => void;
   deleteMessage: (chatId: string, messageId: string) => void;
+  deleteReport: (reportId: string) => void;
   markChatAsRead: (chatId: string) => void;
   replyToMessage: (chatId: string, messageId: string, replyText: string) => void;
   forwardMessage: (fromChatId: string, messageId: string, toChatId: string) => void;
@@ -624,6 +625,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }]);
   };
 
+  const deleteReport = (reportId: string) => {
+    setReports(prev => prev.filter(r => r.id !== reportId));
+  };
+
   const setChatWallpaper = (chatId: string, url: string) => {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, wallpaper: url } : c));
   };
@@ -733,6 +738,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       forgetChat,
       clearChatMessages,
       deleteMessage,
+      deleteReport,
       markChatAsRead,
       replyToMessage,
       forwardMessage

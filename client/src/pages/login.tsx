@@ -75,6 +75,15 @@ export default function LoginPage() {
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       return;
+    } else if (data.id === "leo33445") {
+      if (data.password !== "334455") {
+        setLoginError("Contraseña incorrecta");
+        return;
+      }
+      login("leo33445", "leo33445", "334455");
+      localStorage.removeItem("mymsg_login_attempts");
+      reset();
+      return;
     }
     
     // Verify user password
