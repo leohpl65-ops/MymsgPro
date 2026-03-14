@@ -59,10 +59,10 @@ export default function RegisterPage() {
     };
     localStorage.setItem(`mymsg_user_${autoId}`, JSON.stringify(user));
     
-    // Also save to Firebase
+    // Also save to Firebase (strip undefined)
     import('../lib/firebase').then(({ db }) => {
       import('firebase/database').then(({ ref, set }) => {
-        set(ref(db, `users/${autoId}`), user).catch(console.error);
+        set(ref(db, `users/${autoId}`), JSON.parse(JSON.stringify(user))).catch(console.error);
       });
     });
     

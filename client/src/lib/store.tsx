@@ -323,8 +323,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const savedUser = JSON.parse(savedUserStr);
       savedUser.name = name;
       localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(savedUser));
-      // Update Firebase
-      set(ref(db, `users/${id}`), savedUser).catch(console.error);
+      // Update Firebase (strip undefined values)
+      set(ref(db, `users/${id}`), JSON.parse(JSON.stringify(savedUser))).catch(console.error);
     }
 
     const user: User = { 
@@ -519,11 +519,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       text: censoredText,
       timestamp: Date.now(),
       type,
-      mediaUrl,
       status: 'sent',
       read: false
     };
-
+    
+    if (mediaUrl) {
+      newMessage.mediaUrl = mediaUrl;
+    }
+    
+    // Firebase doesn't accept undefined values
+    // Using structuredClone or similar to completely strip out undefined values
+    const safeMessage = JSON.parse(JSON.stringify(newMessage));
+    
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
         // Update streak
@@ -545,10 +552,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Broadcast for groups or handle offline for DMs (Firebase)
         if (c.type === 'group') {
           const globalGroupRef = ref(db, `groups/${c.id}`);
-          set(globalGroupRef, {
+          // Strip undefined values for Firebase
+          const groupDataToSave = JSON.parse(JSON.stringify({
             ...updatedChat,
             messages: updatedChat.messages
-          });
+          }));
+          set(globalGroupRef, groupDataToSave).catch(e => console.error("Firebase group send error", e));
           
           const globalGroupStr = localStorage.getItem(`mymsg_global_group_${c.id}`);
           if (globalGroupStr) {
@@ -563,7 +572,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId) {
             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
-            set(fbMsgRef, newMessage);
+            // Strip undefined values for Firebase
+            set(fbMsgRef, safeMessage).catch(e => console.error("Firebase send message error", e));
 
             // Keep local fallback just in case
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
