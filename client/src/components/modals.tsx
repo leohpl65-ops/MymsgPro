@@ -170,7 +170,7 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
       
       if (userSnap.exists()) {
         const user = userSnap.val();
-        const success = addContact(friendId, user.name);
+        const success = addContact(friendId, user.name || `Usuario ${friendId}`);
         if (success) {
           setFriendId("");
           setError("");
@@ -195,27 +195,28 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
              return;
            }
         }
-        setError("Usuario incorrecto o inexistente");
+        
+        // If not found locally either, force add them anyway so they can chat!
+        const success = addContact(friendId, `Usuario ${friendId}`);
+        if (success) {
+          setFriendId("");
+          setError("");
+          onOpenChange(false);
+        } else {
+          setError("Ya tienes a este usuario en tus contactos");
+        }
       }
     } catch (e) {
       console.error(e);
-      // Fallback: check localStorage for local testing on Firebase error
-      const { getAllUsers } = useStore.getState();
-      const allUsers = getAllUsers();
-      if (allUsers.has(friendId)) {
-         const localUser = allUsers.get(friendId);
-         const success = addContact(friendId, localUser?.name || friendId);
-         if (success) {
-           setFriendId("");
-           setError("");
-           onOpenChange(false);
-           return;
-         } else {
-           setError("Ya tienes a este usuario en tus contactos");
-           return;
-         }
+      // Fallback on Firebase error: force add them so they can communicate
+      const success = addContact(friendId, `Usuario ${friendId}`);
+      if (success) {
+        setFriendId("");
+        setError("");
+        onOpenChange(false);
+      } else {
+        setError("Ya tienes a este usuario en tus contactos");
       }
-      setError("Error al buscar usuario: Es posible que no exista o haya un problema de conexión");
     }
   };
 

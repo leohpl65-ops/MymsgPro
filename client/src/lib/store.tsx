@@ -401,7 +401,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChats([]);
   };
 
-  const createGroup = (name: string) => {
+  const createGroup = async (name: string) => {
     if (!currentUser) return;
     const groupId = `group-${nanoid()}`;
     const newGroup: Chat = {
@@ -418,6 +418,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     
     // Save to global storage for sync
     localStorage.setItem(`mymsg_global_group_${groupId}`, JSON.stringify(newGroup));
+    
+    // Try to create it in Firebase for global access
+    try {
+      const { set, ref } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      // Strip undefined
+      const safeGroup = JSON.parse(JSON.stringify(newGroup));
+      await set(ref(db, `groups/${groupId}`), safeGroup);
+    } catch(e) {
+      console.error("Error creating group in Firebase", e);
+    }
     
     setChats(prev => [newGroup, ...prev]);
   };
