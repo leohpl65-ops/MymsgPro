@@ -126,6 +126,22 @@ export default function LoginPage() {
       return;
     }
     
+    // Check Firebase for user data to keep it fully synced across devices
+    try {
+      const { get, ref } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      
+      const userSnap = await get(ref(db, `users/${foundUserId}`));
+      if (userSnap.exists()) {
+        const fbUser = userSnap.val();
+        // Update local with Firebase version just in case they changed avatar/name on another device
+        foundUser = { ...foundUser, ...fbUser };
+        localStorage.setItem(`mymsg_user_${foundUserId}`, JSON.stringify(foundUser));
+      }
+    } catch (e) {
+      console.warn("Could not sync user from Firebase during login", e);
+    }
+    
     try {
       await login(foundUser.name, foundUserId, data.password);
       localStorage.removeItem("mymsg_login_attempts");

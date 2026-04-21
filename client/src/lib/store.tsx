@@ -213,13 +213,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   let senderName = senderId;
                   const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
                   if (senderUserStr) {
-                    senderName = JSON.parse(senderUserStr).name;
+                    const parsedUser = JSON.parse(senderUserStr);
+                    senderName = parsedUser.originalName || parsedUser.name;
                   } else {
                     // Try to get from Firebase if not local
                     get(ref(db, `users/${senderId}`)).then(uSnap => {
                       if (uSnap.exists()) {
                         const uData = uSnap.val();
-                        setChats(curr => curr.map(c => c.id === chatId ? {...c, name: uData.name} : c));
+                        const finalName = uData.originalName || uData.name;
+                        setChats(curr => curr.map(c => c.id === chatId ? {...c, name: finalName} : c));
                         localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
                       }
                     }).catch(e => console.warn("Error fetching user", e.message));
