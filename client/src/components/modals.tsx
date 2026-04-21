@@ -161,6 +161,13 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
     setError("");
     if (!friendId.trim()) return;
     
+    // Check if user is trying to add themselves
+    const currentUser = useStore.getState().currentUser;
+    if (currentUser?.id === friendId) {
+      setError("No puedes agregarte a ti mismo");
+      return;
+    }
+    
     // Check Firebase for the user
     try {
       const { get, ref } = await import("firebase/database");
@@ -170,7 +177,10 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
       
       if (userSnap.exists()) {
         const user = userSnap.val();
-        const success = addContact(friendId, user.name || `Usuario ${friendId}`);
+        // user.originalName is the permanent username chosen at registration
+        const displayName = user.originalName || user.name || `Usuario ${friendId}`;
+        const success = addContact(friendId, displayName);
+        
         if (success) {
           setFriendId("");
           setError("");
@@ -179,44 +189,11 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
           setError("Ya tienes a este usuario en tus contactos");
         }
       } else {
-        // Fallback: check localStorage for local testing
-        const { getAllUsers } = useStore.getState();
-        const allUsers = getAllUsers();
-        if (allUsers.has(friendId)) {
-           const localUser = allUsers.get(friendId);
-           const success = addContact(friendId, localUser?.name || friendId);
-           if (success) {
-             setFriendId("");
-             setError("");
-             onOpenChange(false);
-             return;
-           } else {
-             setError("Ya tienes a este usuario en tus contactos");
-             return;
-           }
-        }
-        
-        // If not found locally either, force add them anyway so they can chat!
-        const success = addContact(friendId, `Usuario ${friendId}`);
-        if (success) {
-          setFriendId("");
-          setError("");
-          onOpenChange(false);
-        } else {
-          setError("Ya tienes a este usuario en tus contactos");
-        }
+        setError("Ese usuario no existe");
       }
     } catch (e) {
       console.error(e);
-      // Fallback on Firebase error: force add them so they can communicate
-      const success = addContact(friendId, `Usuario ${friendId}`);
-      if (success) {
-        setFriendId("");
-        setError("");
-        onOpenChange(false);
-      } else {
-        setError("Ya tienes a este usuario en tus contactos");
-      }
+      setError("Error de conexión. Inténtalo de nuevo.");
     }
   };
 
