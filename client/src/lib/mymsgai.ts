@@ -9,29 +9,34 @@ export function getMymsgAIResponse(message: string): string {
 
   const lowerMessage = message.toLowerCase().trim();
 
-  // Math questions
-  if (lowerMessage.includes("cuánto") || lowerMessage.includes("cuanto") || lowerMessage.includes("resultado")) {
-    try {
-      const mathMatch = message.match(/(\d+)\s*([+\-*/])\s*(\d+)/);
-      if (mathMatch) {
-        const [, num1Str, operator, num2Str] = mathMatch;
-        const num1 = parseInt(num1Str);
-        const num2 = parseInt(num2Str);
-        let result: number;
+  // Math questions (Calculator)
+  try {
+    // Look for math expressions including numbers, operators, decimals, parentheses
+    const mathRegex = /([0-9\.\+\-\*\/\(\)\s^]{3,})/;
+    const match = message.match(mathRegex);
+    
+    if (match) {
+      // Clean up the expression
+      let expression = match[1]
+        .replace(/[a-zA-Z=]/g, '') // remove stray letters and equals sign
+        .replace(/x/gi, '*') // replace x with *
+        .replace(/÷/g, '/') // replace ÷ with /
+        .replace(/,/g, '.') // replace commas with dots for decimals
+        .trim();
         
-        switch (operator) {
-          case '+': result = num1 + num2; break;
-          case '-': result = num1 - num2; break;
-          case '*': result = num1 * num2; break;
-          case '/': result = num1 / num2; break;
-          default: result = 0;
+      if (expression.length >= 3 && /[0-9]/.test(expression) && /[\+\-\*\/]/.test(expression)) {
+        // Safely evaluate math expression
+        const result = new Function(`return ${expression}`)();
+        
+        if (result !== undefined && !isNaN(result) && result !== Infinity && result !== -Infinity) {
+          // Format to max 4 decimal places if it's a decimal
+          const formattedResult = Number.isInteger(result) ? result : Number(result.toFixed(4));
+          return `🧮 Calculadora: El resultado es ${formattedResult}`;
         }
-        
-        return `El resultado es: ${result}`;
       }
-    } catch (e) {
-      return "No pude entender la operación matemática.";
     }
+  } catch (e) {
+    // Ignore evaluation errors and continue to other checks
   }
 
   // Greetings
