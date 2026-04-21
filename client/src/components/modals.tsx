@@ -189,6 +189,22 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
           setError("Ya tienes a este usuario en tus contactos");
         }
       } else {
+        // Try to add the user. Allow them to use "mymsgai" or "ia" to add the bot.
+        let targetId = friendId;
+        if (friendId.toLowerCase() === 'ia' || friendId.toLowerCase() === 'mymsgai') {
+          targetId = 'mymsgai';
+          const success = addContact(targetId, "MymsgAI");
+          if (success) {
+            setFriendId("");
+            setError("");
+            onOpenChange(false);
+            return;
+          } else {
+            setError("Ya tienes a este usuario en tus contactos");
+            return;
+          }
+        }
+        
         setError("Ese usuario no existe");
       }
     } catch (e) {

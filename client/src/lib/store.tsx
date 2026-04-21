@@ -522,17 +522,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return false;
     
     // Special case for MymsgAI - always allow
-    if (contactId === "mymsgai") {
-      const existing = chats.find(c => c.type === 'direct' && c.id === `dm-${[currentUser.id, contactId].sort().join('-')}`);
+    if (contactId === "mymsgai" || contactId.toLowerCase() === "ia") {
+      const existing = chats.find(c => c.type === 'direct' && c.participants.includes('mymsgai') && c.participants.includes(currentUser.id));
       if (existing) return false;
       
       const newChat: Chat = {
-        id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
+        id: `dm-${[currentUser.id, 'mymsgai'].sort().join('-')}`,
         type: 'direct',
         name: "MymsgAI",
         avatar: generateUserAvatarSvg("MymsgAI"),
-        participants: [currentUser.id, contactId],
-        messages: [],
+        participants: [currentUser.id, 'mymsgai'],
+        messages: [{
+          id: nanoid(),
+          senderId: 'mymsgai',
+          text: '¡Hola! Soy MymsgAI, tu asistente virtual inteligente. Puedes hacerme preguntas, pedirme que haga cálculos matemáticos, consultarme datos curiosos o simplemente charlar. ¿En qué te ayudo hoy?',
+          timestamp: Date.now(),
+          type: 'text',
+          status: 'read',
+          read: true
+        }],
+        lastMessage: '¡Hola! Soy MymsgAI...',
         lastMessageTime: Date.now(),
         userId: currentUser.id
       };
@@ -645,9 +654,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         
         // Auto-reply from MymsgAI
         if (c.participants.includes('mymsgai') && type === 'text') {
-          setTimeout(() => {
-            import('./mymsgai').then(({ getMymsgAIResponse }) => {
-              const response = getMymsgAIResponse(text);
+          setTimeout(async () => {
+            try {
+              const { getMymsgAIResponse } = await import('./mymsgai');
+              const response = await getMymsgAIResponse(text);
               const aiMessage: Message = {
                 id: nanoid(),
                 senderId: 'mymsgai',
@@ -662,7 +672,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   ? { ...ch, messages: [...ch.messages, aiMessage], lastMessage: response, lastMessageTime: Date.now() }
                   : ch
               ));
-            });
+            } catch (e) {
+              console.error("AI Error:", e);
+            }
           }, 500);
         }
         
