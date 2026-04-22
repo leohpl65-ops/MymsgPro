@@ -6,7 +6,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut } from "lucide-react";
+import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut, Copy, PlusCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,8 @@ export default function ChatPage() {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [messageToForward, setMessageToForward] = useState<string | null>(null);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -266,7 +268,22 @@ export default function ChatPage() {
             <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { setReplyingTo(selectedMessage); setSelectedMessage(null); }}>
               <Reply className="h-4 w-4 mr-2" /> Responder
             </Button>
-            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { setShowForwardDialog(true); setSelectedMessage(null); }}>
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { 
+              const msgToCopy = chat.messages.find(m => m.id === selectedMessage);
+              if (msgToCopy && msgToCopy.type === 'text') {
+                navigator.clipboard.writeText(msgToCopy.text)
+                  .then(() => alert("Mensaje copiado"))
+                  .catch(() => alert("No se pudo copiar"));
+              }
+              setSelectedMessage(null); 
+            }}>
+              <Copy className="h-4 w-4 mr-2" /> Copiar
+            </Button>
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { 
+              setMessageToForward(selectedMessage); 
+              setShowForwardDialog(true); 
+              setSelectedMessage(null); 
+            }}>
               <Share2 className="h-4 w-4 mr-2" /> Reenviar
             </Button>
             {chat.messages.find(m => m.id === selectedMessage)?.senderId === currentUser?.id && (
@@ -353,7 +370,7 @@ export default function ChatPage() {
             <DialogTitle>Reenviar a</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {chat.messages.find(m => m.id === selectedMessage) && chat.type === 'group' && (
+            {chat.messages.find(m => m.id === messageToForward) && chat.type === 'group' && (
               <div className="text-xs text-muted-foreground mb-3 pb-3 border-b">
                 Este mensaje se reenviará a otros chats/grupos
               </div>
@@ -364,8 +381,8 @@ export default function ChatPage() {
                 variant="outline" 
                 className="w-full justify-start"
                 onClick={() => {
-                  if (selectedMessage) {
-                    forwardMessage(chat.id, selectedMessage, c.id);
+                  if (messageToForward) {
+                    forwardMessage(chat.id, messageToForward, c.id);
                     setShowForwardDialog(false);
                   }
                 }}
@@ -374,6 +391,49 @@ export default function ChatPage() {
                 <span className="text-sm">{c.name}</span>
               </Button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Dialog */}
+      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+        <DialogContent className="sm:max-w-xs" aria-describedby="invite-dialog">
+          <DialogHeader>
+            <DialogTitle>Invitar a Grupo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {chats.filter(c => c.type === 'direct' && c.id !== 'dm-mymsgai' && !c.participants.includes('mymsgai') && !chat.participants.includes(c.participants.find(p => p !== currentUser?.id) || '')).length === 0 && (
+              <div className="text-xs text-muted-foreground text-center py-4">
+                No hay contactos disponibles para invitar.
+              </div>
+            )}
+            {chats.filter(c => c.type === 'direct' && !c.participants.includes('mymsgai') && !chat.participants.includes(c.participants.find(p => p !== currentUser?.id) || '')).map(c => {
+              const contactId = c.participants.find(p => p !== currentUser?.id);
+              if (!contactId) return null;
+              
+              return (
+                <Button 
+                  key={c.id} 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => {
+                    import("firebase/database").then(({ ref, update }) => {
+                      import("@/lib/firebase").then(({ db }) => {
+                        const newParticipants = [...chat.participants, contactId];
+                        updateGroup(chat.id, { participants: newParticipants });
+                        update(ref(db, `groups/${chat.id}`), { participants: newParticipants }).catch(e => console.error(e));
+                        
+                        sendMessage(chat.id, `Se ha añadido a ${c.name} al grupo`, 'text');
+                        setShowInviteDialog(false);
+                      });
+                    });
+                  }}
+                >
+                  <img src={c.avatar} className="w-5 h-5 rounded-full mr-2" />
+                  <span className="text-sm">{c.name}</span>
+                </Button>
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>
@@ -395,7 +455,12 @@ export default function ChatPage() {
              
              {chat.type === 'group' && (
                <div className="p-3 bg-muted rounded-md text-sm">
-                 <p className="font-semibold mb-2">Miembros:</p>
+                 <div className="flex justify-between items-center mb-2">
+                   <p className="font-semibold">Miembros:</p>
+                   <Button variant="outline" size="sm" onClick={() => setShowInviteDialog(true)}>
+                     <PlusCircle className="h-3 w-3 mr-1" /> Invitar
+                   </Button>
+                 </div>
                  <ul className="space-y-2">
                    {chat.participants.map(participantId => {
                      let displayName = participantId;
