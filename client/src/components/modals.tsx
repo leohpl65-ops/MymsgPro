@@ -137,11 +137,27 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
                 value={joinGroupId}
                 onChange={(e) => setJoinGroupId(e.target.value)}
               />
-              <Button variant="outline" onClick={() => { 
+              <Button variant="outline" onClick={async () => { 
                 if (joinGroupId.trim()) {
-                  joinGroup(joinGroupId);
-                  setJoinGroupId("");
-                  onOpenChange(false);
+                  try {
+                    const { get, ref } = await import("firebase/database");
+                    const { db } = await import("@/lib/firebase");
+                    const fullGroupId = joinGroupId.startsWith('group-') ? joinGroupId : `group-${joinGroupId}`;
+                    
+                    const groupSnap = await get(ref(db, `groups/${fullGroupId}`));
+                    if (groupSnap.exists()) {
+                      await joinGroup(joinGroupId);
+                      setJoinGroupId("");
+                      onOpenChange(false);
+                    } else {
+                      alert("Grupo inexistente");
+                    }
+                  } catch (e) {
+                    // Fallback to local
+                    await joinGroup(joinGroupId);
+                    setJoinGroupId("");
+                    onOpenChange(false);
+                  }
                 }
               }}>Unirme</Button>
             </div>

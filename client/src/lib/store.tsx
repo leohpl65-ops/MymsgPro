@@ -467,55 +467,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Firebase join group error", e);
     }
-    
-    // Fallback: Check global storage first (local fallback)
-    const globalGroupStr = localStorage.getItem(`mymsg_global_group_${fullGroupId}`);
-    if (globalGroupStr) {
-      const globalGroup = JSON.parse(globalGroupStr);
-      if (!globalGroup.participants.includes(currentUser.id)) {
-        globalGroup.participants.push(currentUser.id);
-        localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(globalGroup));
-      }
-      
-      setChats(prev => {
-        const existing = prev.find(c => c.id === fullGroupId);
-        if (existing) return prev;
-        return [globalGroup, ...prev];
-      });
-      return;
-    }
-
-    // Fallback/Mock behavior if not in global
-    const group = chats.find(c => c.id === fullGroupId || c.id === groupId);
-    if (group && !group.participants.includes(currentUser.id)) {
-      setChats(prev => prev.map(c => 
-        c.id === group.id
-          ? { ...c, participants: [...c.participants, currentUser.id] } 
-          : c
-      ));
-    } else if (!group) {
-       const newGroup: Chat = {
-         id: fullGroupId,
-         type: 'group',
-         name: `Grupo ${groupId.replace('group-', '')}`,
-         avatar: generateGroupAvatarSvg(groupId.replace('group-', '')),
-         participants: [currentUser.id],
-         messages: [],
-         lastMessage: "Te has unido al grupo",
-         lastMessageTime: Date.now(),
-         userId: currentUser.id
-       };
-       localStorage.setItem(`mymsg_global_group_${fullGroupId}`, JSON.stringify(newGroup));
-       
-       // Try to create it in Firebase too
-       try {
-         const { set, ref } = await import("firebase/database");
-         const { db } = await import("@/lib/firebase");
-         await set(ref(db, `groups/${fullGroupId}`), newGroup);
-       } catch(e) {}
-       
-       setChats(prev => [newGroup, ...prev]);
-    }
   };
 
   const addContact = (contactId: string, contactName: string): boolean => {
