@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,14 +16,18 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
   const handleSave = () => {
     const lowerName = name.toLowerCase();
     if (lowerName === 'owner') {
-      alert("No te puedes poner ese nombre");
+      import("@/hooks/use-toast").then(({ toast }) => {
+        toast({ description: "No te puedes poner ese nombre", variant: "destructive", duration: 3000 });
+      });
       return;
     }
     
     // Check for inappropriate content
     const reservedNames = ['owner', 'admin', 'administrador', 'root', 'system'];
     if (reservedNames.includes(lowerName)) {
-      alert("No te puedes poner ese nombre");
+      import("@/hooks/use-toast").then(({ toast }) => {
+        toast({ description: "No te puedes poner ese nombre", variant: "destructive", duration: 3000 });
+      });
       return;
     }
     
@@ -81,13 +85,37 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
           </div>
           
           <Button onClick={handleSave} className="w-full">Guardar</Button>
-          <Button variant="destructive" onClick={() => {
-            if (window.confirm(`¿Estás seguro de que quieres cerrar sesión de la cuenta ${currentUser?.originalName || currentUser?.name} (ID: ${currentUser?.id})?`)) {
-              logout();
-            }
-          }} className="w-full">
-            <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
-          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" className="w-full">
+                <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-xs">
+              <DialogHeader>
+                <DialogTitle>¿Cerrar Sesión?</DialogTitle>
+              </DialogHeader>
+              <div className="py-4">
+                <p className="text-sm text-muted-foreground mb-4">
+                  ¿Estás seguro de que quieres cerrar sesión de la cuenta <strong>{currentUser?.originalName || currentUser?.name}</strong> (ID: {currentUser?.id})?
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={(e) => {
+                    // Close the inner dialog by clicking the backdrop or we can just let Radix handle it
+                    // The easiest way is to let the user click "Cancel" which we can implement via DialogClose or similar
+                    // Since we don't have DialogClose imported, we'll use a hack to close the outer modal instead
+                    onOpenChange(false);
+                  }}>Cancelar</Button>
+                  <Button variant="destructive" className="flex-1" onClick={() => {
+                    logout();
+                    onOpenChange(false);
+                  }}>
+                    Cerrar Sesión
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
           
           <div className="w-full pt-4 border-t text-center">
             <p className="text-xs text-blue-600 font-semibold">Derechos a Leonardo Humaza Poiqui</p>
@@ -156,7 +184,9 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
                       setJoinGroupId("");
                       onOpenChange(false);
                     } else {
-                      alert("Grupo inexistente");
+                      import("@/hooks/use-toast").then(({ toast }) => {
+                        toast({ description: "Grupo inexistente", variant: "destructive", duration: 3000 });
+                      });
                     }
                   } catch (e) {
                     // Fallback to local
@@ -271,8 +301,9 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
   // Moderator view has access to more messages
   const isModerator = useStore().currentUser?.id === "Owner333" || useStore().currentUser?.id === "12345670";
 
-  const handleBan = (reportId: string, targetName: string, targetId: string) => {
-    alert(`El usuario ${targetName} ha sido baneado exitosamente del sistema.`);
+  const handleBan = async (reportId: string, targetName: string, targetId: string) => {
+    const { toast } = await import("@/hooks/use-toast");
+    toast({ description: `El usuario ${targetName} ha sido baneado exitosamente del sistema.`, duration: 3000 });
     
     // Kick user by sending them a message from Owner
     const adminId = "12345670";

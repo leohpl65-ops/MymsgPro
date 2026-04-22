@@ -98,7 +98,9 @@ export default function ChatPage() {
       
       mediaRecorder.start();
     }).catch(() => {
-      alert("No se pudo acceder al micrófono");
+      import("@/hooks/use-toast").then(({ toast }) => {
+        toast({ description: "No se pudo acceder al micrófono", variant: "destructive", duration: 3000 });
+      });
     });
   };
 
@@ -268,12 +270,17 @@ export default function ChatPage() {
             <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { setReplyingTo(selectedMessage); setSelectedMessage(null); }}>
               <Reply className="h-4 w-4 mr-2" /> Responder
             </Button>
-            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => { 
+            <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={async () => { 
               const msgToCopy = chat.messages.find(m => m.id === selectedMessage);
               if (msgToCopy && msgToCopy.type === 'text') {
-                navigator.clipboard.writeText(msgToCopy.text)
-                  .then(() => alert("Mensaje copiado"))
-                  .catch(() => alert("No se pudo copiar"));
+                try {
+                  await navigator.clipboard.writeText(msgToCopy.text);
+                  const { toast } = await import("@/hooks/use-toast");
+                  toast({ description: "Mensaje copiado", duration: 2000 });
+                } catch (err) {
+                  const { toast } = await import("@/hooks/use-toast");
+                  toast({ description: "No se pudo copiar", variant: "destructive", duration: 2000 });
+                }
               }
               setSelectedMessage(null); 
             }}>
@@ -416,7 +423,7 @@ export default function ChatPage() {
                   key={c.id} 
                   variant="outline" 
                   className="w-full justify-start"
-                  onClick={() => {
+                  onClick={async () => {
                     import("firebase/database").then(({ ref, update }) => {
                       import("@/lib/firebase").then(({ db }) => {
                         const newParticipants = [...chat.participants, contactId];
@@ -425,6 +432,10 @@ export default function ChatPage() {
                         
                         sendMessage(chat.id, `Se ha añadido a ${c.name} al grupo`, 'text');
                         setShowInviteDialog(false);
+                        
+                        import("@/hooks/use-toast").then(({ toast }) => {
+                          toast({ description: `${c.name} invitado al grupo`, duration: 2000 });
+                        });
                       });
                     });
                   }}
