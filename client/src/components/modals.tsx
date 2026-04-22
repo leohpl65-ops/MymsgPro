@@ -153,7 +153,7 @@ export function GroupMenuModal({ open, onOpenChange }: { open: boolean; onOpenCh
 }
 
 export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { addContact, getAllUsers } = useStore();
+  const { addContact, getAllUsers, currentUser } = useStore();
   const [friendId, setFriendId] = useState("");
   const [error, setError] = useState("");
 
@@ -162,7 +162,6 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
     if (!friendId.trim()) return;
     
     // Check if user is trying to add themselves
-    const currentUser = useStore.getState().currentUser;
     if (currentUser?.id === friendId) {
       setError("No puedes agregarte a ti mismo");
       return;
