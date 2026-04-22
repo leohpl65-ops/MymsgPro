@@ -271,11 +271,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (globalGroup && globalGroup.participants && globalGroup.participants.includes(currentUser.id)) {
               const chatIndex = newChats.findIndex(c => c.id === globalGroup.id);
               if (chatIndex >= 0) {
-                if (newChats[chatIndex].messages.length < globalGroup.messages.length) {
+                if (newChats[chatIndex].messages.length < (globalGroup.messages || []).length) {
                   newChats[chatIndex] = {
                     ...newChats[chatIndex],
                     name: globalGroup.name,
-                    messages: globalGroup.messages,
+                    messages: globalGroup.messages || [],
                     lastMessage: globalGroup.lastMessage,
                     lastMessageTime: globalGroup.lastMessageTime,
                     participants: globalGroup.participants
@@ -300,11 +300,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const interval = setInterval(checkGroups, 2000);
     
+    // Sync groups from Firebase to local storage
+    const groupInterval = setInterval(() => {
+      import("firebase/database").then(({ ref, get }) => {
+        import("@/lib/firebase").then(({ db }) => {
+          chats.forEach(chat => {
+            if (chat.type === 'group') {
+              get(ref(db, `groups/${chat.id}`)).then(snap => {
+                if (snap.exists()) {
+                  const fbGroup = snap.val();
+                  if (!fbGroup.messages) fbGroup.messages = [];
+                  localStorage.setItem(`mymsg_global_group_${chat.id}`, JSON.stringify(fbGroup));
+                }
+              }).catch(() => {});
+            }
+          });
+        });
+      });
+    }, 3000);
+    
     return () => {
       clearInterval(interval);
+      clearInterval(groupInterval);
       unsubscribe(); // Clean up listener
     };
-  }, [currentUser]);
+  }, [chats.length, currentUser]);
 
   const login = async (name: string, id: string, password: string) => {
     // Check local first
@@ -669,6 +689,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const updatedUser = { ...currentUser, ...updates };
     setCurrentUser(updatedUser);
     localStorage.setItem(`mymsg_user_${currentUser.id}`, JSON.stringify(updatedUser));
+    
+    // Update Firebase
+    import("firebase/database").then(({ ref, update }) => {
+      import("@/lib/firebase").then(({ db }) => {
+         update(ref(db, `users/${currentUser.id}`), JSON.parse(JSON.stringify(updates))).catch(e => console.error(e));
+      });
+    });
   };
 
   const updateGroup = (groupId: string, updates: Partial<Chat>) => {
@@ -681,15 +708,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (globalGroupStr) {
       const globalGroup = JSON.parse(globalGroupStr);
       localStorage.setItem(`mymsg_global_group_${groupId}`, JSON.stringify({ ...globalGroup, ...updates }));
+      
+      // Update Firebase
+      import("firebase/database").then(({ ref, update }) => {
+        import("@/lib/firebase").then(({ db }) => {
+           update(ref(db, `groups/${groupId}`), JSON.parse(JSON.stringify(updates))).catch(e => console.error(e));
+        });
+      });
     }
   };
 
   const reportEntity = (type: 'Usuario' | 'Grupo', targetId: string, targetName: string) => {
     if (!currentUser) return;
     
-    // Get last few messages as evidence
+    // Get last 50 messages as evidence
     const chat = chats.find(c => c.id === targetId || c.participants.includes(targetId));
-    const targetMessages = chat ? chat.messages.slice(-5) : [];
+    const targetMessages = chat ? chat.messages.slice(-50) : [];
 
     const newReport: Report = {
       id: nanoid(),

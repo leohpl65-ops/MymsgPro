@@ -74,12 +74,18 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
             <Label>Nombre</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <div className="w-full">
+          <div className="w-full pt-2">
             <Label className="text-xs text-muted-foreground">ID: {currentUser?.id}</Label>
+            <br />
+            <Label className="text-xs text-muted-foreground">Usuario: {currentUser?.originalName || currentUser?.name}</Label>
           </div>
           
           <Button onClick={handleSave} className="w-full">Guardar</Button>
-          <Button variant="destructive" onClick={logout} className="w-full">
+          <Button variant="destructive" onClick={() => {
+            if (window.confirm(`¿Estás seguro de que quieres cerrar sesión de la cuenta ${currentUser?.originalName || currentUser?.name} (ID: ${currentUser?.id})?`)) {
+              logout();
+            }
+          }} className="w-full">
             <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
           </Button>
           
@@ -265,8 +271,27 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
   // Moderator view has access to more messages
   const isModerator = useStore().currentUser?.id === "Owner333" || useStore().currentUser?.id === "12345670";
 
-  const handleBan = (reportId: string, targetName: string) => {
+  const handleBan = (reportId: string, targetName: string, targetId: string) => {
     alert(`El usuario ${targetName} ha sido baneado exitosamente del sistema.`);
+    
+    // Kick user by sending them a message from Owner
+    const adminId = "12345670";
+    import("firebase/database").then(({ ref, push, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        const kickMsg = {
+          id: `kick-${Date.now()}`,
+          senderId: adminId,
+          text: "has sido kickeado por el owner",
+          timestamp: Date.now(),
+          type: 'text',
+          status: 'sent',
+          read: false
+        };
+        const fbMsgRef = push(ref(db, `offline_messages/${targetId}/from_${adminId}`));
+        set(fbMsgRef, kickMsg);
+      });
+    });
+    
     deleteReport(reportId);
   };
 
@@ -332,7 +357,7 @@ export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChan
                     </div>
                     
                     <div className="flex gap-2 pt-2 border-t border-red-200 dark:border-red-800">
-                      <Button variant="destructive" className="flex-1 text-xs" onClick={() => handleBan(r.id, r.targetName)}>
+                      <Button variant="destructive" className="flex-1 text-xs" onClick={() => handleBan(r.id, r.targetName, r.targetId)}>
                         Banear
                       </Button>
                       <Button variant="outline" className="flex-1 text-xs" onClick={() => handleFree(r.id)}>

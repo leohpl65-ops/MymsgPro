@@ -10,6 +10,29 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
     return "Lo siento, soy una IA y no puedo responderte eso por políticas de seguridad.";
   }
 
+  // Handle mathematical equations directly
+  const isMathEquation = /^[0-9\+\-\*\/\(\)\.\s]+$/.test(message.trim());
+  if (isMathEquation && message.trim().length > 2) {
+    try {
+      // Usar Function en lugar de eval por seguridad, aunque eval funciona para mates simples
+      const result = new Function(`return ${message.trim()}`)();
+      return `El resultado de ${message.trim()} es: ${result}`;
+    } catch (e) {
+      // Si falla, pasarlo a Gemini
+    }
+  }
+
+  // Handle "resuelve" or "calcula" text + math
+  const mathMatch = message.match(/(?:resuelve|calcula|cuanto es|cuánto es)\s+([0-9\+\-\*\/\(\)\.\s]+)/i);
+  if (mathMatch && mathMatch[1].trim().length > 2) {
+    try {
+      const result = new Function(`return ${mathMatch[1].trim()}`)();
+      return `El resultado es: ${result}`;
+    } catch (e) {
+      // Si falla, pasarlo a Gemini
+    }
+  }
+
   try {
     const response = await fetch(API_URL, {
       method: "POST",
