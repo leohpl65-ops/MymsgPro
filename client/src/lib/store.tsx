@@ -171,93 +171,95 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentUser) return;
     
-    const checkOfflineMessages = () => {
-      // Sync with Firebase real-time database instead of just polling localStorage
-      // We will listen to the offline messages queue for this user
-      const fbOfflineRef = ref(db, `offline_messages/${currentUser.id}`);
-      get(fbOfflineRef).then((snapshot) => {
-        if (snapshot.exists()) {
-          const sendersData = snapshot.val();
-          
-          setChats(prevChats => {
-            let newChats = [...prevChats];
-            let changed = false;
+    // Use onValue listener instead of polling to avoid race conditions and duplicates
+    const fbOfflineRef = ref(db, `offline_messages/${currentUser.id}`);
+    
+    const unsubscribe = onValue(fbOfflineRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const sendersData = snapshot.val();
+        
+        setChats(prevChats => {
+          let newChats = [...prevChats];
+          let changed = false;
 
-            Object.keys(sendersData).forEach(senderKey => {
-              // senderKey is like "from_123456"
-              const senderId = senderKey.replace('from_', '');
-              const messagesObj = sendersData[senderKey];
-              const fbMsgs: Message[] = Object.values(messagesObj);
+          Object.keys(sendersData).forEach(senderKey => {
+            // senderKey is like "from_123456"
+            const senderId = senderKey.replace('from_', '');
+            const messagesObj = sendersData[senderKey];
+            const fbMsgs: Message[] = Object.values(messagesObj);
+            
+            if (fbMsgs.length > 0) {
+              const chatId = `dm-${[currentUser.id, senderId].sort().join('-')}`;
+              const chatIndex = newChats.findIndex(c => c.id === chatId);
               
-              if (fbMsgs.length > 0) {
-                const chatId = `dm-${[currentUser.id, senderId].sort().join('-')}`;
-                const chatIndex = newChats.findIndex(c => c.id === chatId);
+              // Add to existing chat
+              if (chatIndex >= 0) {
+                // Make sure we don't add duplicates by checking msg IDs
+                const existingMsgIds = new Set(newChats[chatIndex].messages.map(m => m.id));
+                const newMsgs = fbMsgs.filter(m => !existingMsgIds.has(m.id));
                 
-                // Add to existing chat
-                if (chatIndex >= 0) {
-                  // Make sure we don't add duplicates by checking msg IDs
-                  const existingMsgIds = new Set(newChats[chatIndex].messages.map(m => m.id));
-                  const newMsgs = fbMsgs.filter(m => !existingMsgIds.has(m.id));
-                  
-                  if (newMsgs.length > 0) {
-                    newChats[chatIndex] = {
-                      ...newChats[chatIndex],
-                      messages: [...newChats[chatIndex].messages, ...newMsgs],
-                      lastMessage: newMsgs[newMsgs.length - 1].type === 'text' ? newMsgs[newMsgs.length - 1].text : 'Archivo multimedia',
-                      lastMessageTime: newMsgs[newMsgs.length - 1].timestamp
-                    };
-                    changed = true;
-                  }
-                } else {
-                  // Auto-create chat for unknown contact from Firebase
-                  let senderName = senderId;
-                  const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
-                  if (senderUserStr) {
-                    const parsedUser = JSON.parse(senderUserStr);
-                    senderName = parsedUser.originalName || parsedUser.name;
-                  } else {
-                    // Try to get from Firebase if not local
-                    get(ref(db, `users/${senderId}`)).then(uSnap => {
-                      if (uSnap.exists()) {
-                        const uData = uSnap.val();
-                        const finalName = uData.originalName || uData.name;
-                        setChats(curr => curr.map(c => c.id === chatId ? {...c, name: finalName} : c));
-                        localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
-                      }
-                    }).catch(e => console.warn("Error fetching user", e.message));
-                  }
-                  
-                  const newChat: Chat = {
-                    id: chatId,
-                    type: 'direct',
-                    name: senderName,
-                    avatar: generateUserAvatarSvg(senderId),
-                    participants: [currentUser.id, senderId],
-                    messages: fbMsgs,
-                    lastMessage: fbMsgs[fbMsgs.length - 1].type === 'text' ? fbMsgs[fbMsgs.length - 1].text : 'Archivo multimedia',
-                    lastMessageTime: fbMsgs[fbMsgs.length - 1].timestamp,
-                    userId: currentUser.id
+                if (newMsgs.length > 0) {
+                  newChats[chatIndex] = {
+                    ...newChats[chatIndex],
+                    messages: [...newChats[chatIndex].messages, ...newMsgs],
+                    lastMessage: newMsgs[newMsgs.length - 1].type === 'text' ? newMsgs[newMsgs.length - 1].text : 'Archivo multimedia',
+                    lastMessageTime: newMsgs[newMsgs.length - 1].timestamp
                   };
-                  newChats = [newChat, ...newChats];
                   changed = true;
                 }
+              } else {
+                // Auto-create chat for unknown contact from Firebase
+                let senderName = senderId;
+                const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
+                if (senderUserStr) {
+                  const parsedUser = JSON.parse(senderUserStr);
+                  senderName = parsedUser.originalName || parsedUser.name;
+                } else {
+                  // Try to get from Firebase if not local
+                  get(ref(db, `users/${senderId}`)).then(uSnap => {
+                    if (uSnap.exists()) {
+                      const uData = uSnap.val();
+                      const finalName = uData.originalName || uData.name;
+                      setChats(curr => curr.map(c => c.id === chatId ? {...c, name: finalName} : c));
+                      localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
+                    }
+                  }).catch(e => console.warn("Error fetching user", e.message));
+                }
+                
+                const newChat: Chat = {
+                  id: chatId,
+                  type: 'direct',
+                  name: senderName,
+                  avatar: generateUserAvatarSvg(senderId),
+                  participants: [currentUser.id, senderId],
+                  messages: fbMsgs,
+                  lastMessage: fbMsgs[fbMsgs.length - 1].type === 'text' ? fbMsgs[fbMsgs.length - 1].text : 'Archivo multimedia',
+                  lastMessageTime: fbMsgs[fbMsgs.length - 1].timestamp,
+                  userId: currentUser.id
+                };
+                newChats = [newChat, ...newChats];
+                changed = true;
               }
-            });
-
-            if (changed) {
-              // Delete the processed messages from Firebase to not read them again
-              remove(fbOfflineRef).catch(e => console.warn("Error removing msgs", e.message));
-              return newChats;
             }
-            return prevChats;
           });
-        }
-      }).catch(e => {
-        // Silently catch permission denied to avoid screen overlay errors
-        console.warn("Firebase offline queue read error:", e.message);
-      });
-      
-      // Check Groups - check the global groups to see if we've been added
+
+          if (changed) {
+            // Delete the processed messages from Firebase to not read them again
+            // Doing it inside the state setter ensures we only delete if we successfully processed them
+            setTimeout(() => {
+              remove(fbOfflineRef).catch(e => console.warn("Error removing msgs", e.message));
+            }, 100);
+            return newChats;
+          }
+          return prevChats;
+        });
+      }
+    }, (error) => {
+      console.warn("Firebase offline queue read error:", error.message);
+    });
+
+    // Check Groups interval (polling is okay for this since it reads local storage)
+    const checkGroups = () => {
       setChats(prevChats => {
         let newChats = [...prevChats];
         let changed = false;
@@ -296,9 +298,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    // Check every 2 seconds to simulate real-time communication across tabs/windows
-    const interval = setInterval(checkOfflineMessages, 2000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkGroups, 2000);
+    
+    return () => {
+      clearInterval(interval);
+      unsubscribe(); // Clean up listener
+    };
   }, [currentUser]);
 
   const login = async (name: string, id: string, password: string) => {
