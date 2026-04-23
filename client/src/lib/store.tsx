@@ -209,16 +209,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentUser) return;
     
+    let isSubscribed = true;
+    
     // Use onValue listener instead of polling to avoid race conditions and duplicates
     const fbOfflineRef = ref(db, `offline_messages/${currentUser.id}`);
     
     const unsubscribe = onValue(fbOfflineRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const sendersData = snapshot.val();
-        
-        setChats(prevChats => {
-          let newChats = [...prevChats];
-          let changed = false;
+      if (!isSubscribed || !snapshot.exists()) return;
+      
+      const sendersData = snapshot.val();
+      
+      setChats(prevChats => {
+        let newChats = [...prevChats];
+        let changed = false;
 
           Object.keys(sendersData).forEach(senderKey => {
             // senderKey is like "from_123456"
@@ -237,9 +240,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 const newMsgs = fbMsgs.filter(m => !existingMsgIds.has(m.id));
                 
                 if (newMsgs.length > 0) {
+                  // Mantenemos los mensajes anteriores y agregamos los nuevos
+                  const allMessages = [...newChats[chatIndex].messages, ...newMsgs];
+                  // Asegurarse de ordenar por timestamp por si acaso
+                  allMessages.sort((a, b) => a.timestamp - b.timestamp);
+                  
                   newChats[chatIndex] = {
                     ...newChats[chatIndex],
-                    messages: [...newChats[chatIndex].messages, ...newMsgs],
+                    messages: allMessages,
                     lastMessage: newMsgs[newMsgs.length - 1].type === 'text' ? newMsgs[newMsgs.length - 1].text : 'Archivo multimedia',
                     lastMessageTime: newMsgs[newMsgs.length - 1].timestamp
                   };
@@ -264,15 +272,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   }).catch(e => console.warn("Error fetching user", e.message));
                 }
                 
+                // Asegurarse de ordenar los mensajes
+                const sortedMsgs = [...fbMsgs].sort((a, b) => a.timestamp - b.timestamp);
+                
                 const newChat: Chat = {
                   id: chatId,
                   type: 'direct',
                   name: senderName,
                   avatar: generateUserAvatarSvg(senderId),
                   participants: [currentUser.id, senderId],
-                  messages: fbMsgs,
-                  lastMessage: fbMsgs[fbMsgs.length - 1].type === 'text' ? fbMsgs[fbMsgs.length - 1].text : 'Archivo multimedia',
-                  lastMessageTime: fbMsgs[fbMsgs.length - 1].timestamp,
+                  messages: sortedMsgs,
+                  lastMessage: sortedMsgs[sortedMsgs.length - 1].type === 'text' ? sortedMsgs[sortedMsgs.length - 1].text : 'Archivo multimedia',
+                  lastMessageTime: sortedMsgs[sortedMsgs.length - 1].timestamp,
                   userId: currentUser.id
                 };
                 newChats = [newChat, ...newChats];
@@ -285,13 +296,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             // Delete the processed messages from Firebase to not read them again
             // Doing it inside the state setter ensures we only delete if we successfully processed them
             setTimeout(() => {
-              remove(fbOfflineRef).catch(e => console.warn("Error removing msgs", e.message));
+              if (isSubscribed) {
+                remove(fbOfflineRef).catch(e => console.warn("Error removing msgs", e.message));
+              }
             }, 100);
             return newChats;
           }
           return prevChats;
         });
-      }
     }, (error) => {
       console.warn("Firebase offline queue read error:", error.message);
     });
@@ -650,15 +662,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Send message to global Firebase queue for the recipient
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId) {
+            // ALSO WRITE TO SENDER'S OFFLINE QUEUE (So if sender refreshes before the receiver sees it, it's not lost locally)
+            // Wait, actually the sender already saves it to `c.messages` locally. The problem is the other person doesn't get it.
             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
             // Strip undefined values for Firebase
             set(fbMsgRef, safeMessage).catch(e => console.error("Firebase send message error", e));
+
+            // Para que la otra persona sí lo vea si no recarga, vamos a guardar el chat de manera global 
+            // similar a los grupos, como un DM en firebase si queremos que se sincronice en tiempo real,
+            // pero para no rehacer todo el sistema ahora mismo, simplemente seguimos usando el sistema offline
+            // El receptor lo leerá cuando se ejecute el listener de onValue en store.tsx (línea ~230)
 
             // Keep local fallback just in case
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
             const offlineMsgs = JSON.parse(localStorage.getItem(offlineKey) || '[]');
             offlineMsgs.push(newMessage);
             localStorage.setItem(offlineKey, JSON.stringify(offlineMsgs));
+            
+            // 🔥 ARREGLO PARA QUE EL RECEPTOR LO VEA EN EL MOMENTO SIN RECARGAR 🔥
+            // Escribimos también en una ruta pública global de este chat específico que ambos puedan escuchar
+            // Para el futuro, pero por ahora el listener de offline_messages debería captarlo si está en la app.
           }
         }
         

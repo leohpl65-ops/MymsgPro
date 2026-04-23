@@ -211,10 +211,11 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const handleAddContact = async () => {
     setError("");
-    if (!friendId.trim()) return;
+    const cleanFriendId = friendId.trim().replace(/\s/g, '');
+    if (!cleanFriendId) return;
     
     // Check if user is trying to add themselves
-    if (currentUser?.id === friendId) {
+    if (currentUser?.id === cleanFriendId) {
       setError("No puedes agregarte a ti mismo");
       return;
     }
@@ -224,13 +225,13 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
       const { get, ref } = await import("firebase/database");
       const { db } = await import("@/lib/firebase");
       
-      const userSnap = await get(ref(db, `users/${friendId}`));
+      const userSnap = await get(ref(db, `users/${cleanFriendId}`));
       
       if (userSnap.exists()) {
         const user = userSnap.val();
         // user.originalName is the permanent username chosen at registration
-        const displayName = user.originalName || user.name || `Usuario ${friendId}`;
-        const success = addContact(friendId, displayName);
+        const displayName = user.originalName || user.name || `Usuario ${cleanFriendId}`;
+        const success = addContact(cleanFriendId, displayName);
         
         if (success) {
           setFriendId("");
@@ -241,8 +242,8 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
         }
       } else {
         // Try to add the user. Allow them to use "mymsgai" or "ia" to add the bot.
-        let targetId = friendId;
-        if (friendId.toLowerCase() === 'ia' || friendId.toLowerCase() === 'mymsgai') {
+        let targetId = cleanFriendId;
+        if (cleanFriendId.toLowerCase() === 'ia' || cleanFriendId.toLowerCase() === 'mymsgai') {
           targetId = 'mymsgai';
           const success = addContact(targetId, "MymsgAI");
           if (success) {
