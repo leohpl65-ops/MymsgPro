@@ -119,6 +119,32 @@ export default function LoginPage() {
       }
     }
 
+    // Si no se encontró localmente, buscar en Firebase (para que nunca se pierdan si borran datos)
+    if (!foundUser) {
+      try {
+        const { get, ref } = await import("firebase/database");
+        const { db } = await import("@/lib/firebase");
+        const usersSnap = await get(ref(db, `users`));
+        if (usersSnap.exists()) {
+          const users = usersSnap.val();
+          for (const uid in users) {
+            const u = users[uid];
+            if (u && ((u.originalName && u.originalName.toLowerCase() === data.name.toLowerCase()) || 
+                      (u.name && u.name.toLowerCase() === data.name.toLowerCase()) ||
+                      uid === data.name)) {
+              foundUser = u;
+              foundUserId = uid;
+              // Save to local storage for future
+              localStorage.setItem(`mymsg_user_${uid}`, JSON.stringify(u));
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("No se pudo buscar en Firebase", e);
+      }
+    }
+
     if (!foundUser) {
        setLoginError("Usuario no encontrado.");
        return;
