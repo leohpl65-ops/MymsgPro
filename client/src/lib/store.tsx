@@ -113,7 +113,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const isFirstLogin = !localStorage.getItem(`mymsg_chats_${currentUser.id}`);
       const saved = localStorage.getItem(`mymsg_chats_${currentUser.id}`);
       if (saved) {
-        setChats(JSON.parse(saved));
+        const parsedChats: Chat[] = JSON.parse(saved);
+        
+        // Sync group names and messages from "global" storage
+        const syncedChats = parsedChats.map(chat => {
+          if (chat.type === 'group') {
+            const globalGroupStr = localStorage.getItem(`mymsg_global_group_${chat.id}`);
+            if (globalGroupStr) {
+              const globalGroup = JSON.parse(globalGroupStr);
+              return {
+                ...chat,
+                name: globalGroup.name,
+                messages: globalGroup.messages,
+                lastMessage: globalGroup.lastMessage,
+                lastMessageTime: globalGroup.lastMessageTime,
+                participants: globalGroup.participants
+              };
+            }
+          } else if (chat.type === 'direct') {
+            // Check for offline messages sent to this user
+            const contactId = chat.participants.find(p => p !== currentUser.id);
+            if (contactId) {
+              const offlineMsgsKey = `mymsg_offline_msgs_${currentUser.id}_from_${contactId}`;
+              const offlineMsgsStr = localStorage.getItem(offlineMsgsKey);
+              if (offlineMsgsStr) {
+                const offlineMsgs = JSON.parse(offlineMsgsStr);
+                localStorage.removeItem(offlineMsgsKey);
+                return {
+                  ...chat,
+                  messages: [...chat.messages, ...offlineMsgs],
+                  lastMessage: offlineMsgs[offlineMsgs.length - 1].text,
+                  lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp
+                };
+              }
+            }
+          }
+          return chat;
+        });
+        
+        setChats(syncedChats);
       } else {
         setChats([]);
         // Add MymsgAI on first login
@@ -346,15 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       throw new Error("Esta cuenta no existe. Prueba otra vez.");
     }
 
-    if (savedUserStr) {
-      const savedUser = JSON.parse(savedUserStr);
-      savedUser.name = name;
-      localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(savedUser));
-      // Update Firebase (strip undefined values)
-      set(ref(db, `users/${id}`), JSON.parse(JSON.stringify(savedUser))).catch(console.error);
-    }
-
-    const user: User = { 
+    let finalUser: User = { 
       id, 
       name, 
       password, 
@@ -362,9 +392,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       language: (localStorage.getItem(`mymsg_lang_${id}`) as any) || (navigator.language.startsWith('es') ? 'es' : 'en'),
       status: 'offline'
     };
-    setCurrentUser(user);
-    localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(user));
-    localStorage.setItem("mymsg_user", JSON.stringify(user));
+
+    if (savedUserStr) {
+      const savedUser = JSON.parse(savedUserStr);
+      finalUser = { ...savedUser, name, status: 'offline' };
+      // Preserve the original name if it exists, otherwise set it
+      if (savedUser.originalName) {
+        finalUser.originalName = savedUser.originalName;
+      } else {
+        finalUser.originalName = savedUser.name;
+      }
+      // Update Firebase (strip undefined values)
+      set(ref(db, `users/${id}`), JSON.parse(JSON.stringify(finalUser))).catch(console.error);
+    }
+
+    setCurrentUser(finalUser);
+    localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(finalUser));
+    localStorage.setItem("mymsg_user", JSON.stringify(finalUser));
     
     // Restore chats from localStorage for this specific user ID
     const savedChats = localStorage.getItem(`mymsg_chats_${id}`);
