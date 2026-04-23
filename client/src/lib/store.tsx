@@ -256,21 +256,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               } else {
                 // Auto-create chat for unknown contact from Firebase
                 let senderName = senderId;
+                
+                // First attempt: try to get the name from localStorage
                 const senderUserStr = localStorage.getItem(`mymsg_user_${senderId}`);
                 if (senderUserStr) {
-                  const parsedUser = JSON.parse(senderUserStr);
-                  senderName = parsedUser.originalName || parsedUser.name;
-                } else {
-                  // Try to get from Firebase if not local
-                  get(ref(db, `users/${senderId}`)).then(uSnap => {
-                    if (uSnap.exists()) {
-                      const uData = uSnap.val();
-                      const finalName = uData.originalName || uData.name;
-                      setChats(curr => curr.map(c => c.id === chatId ? {...c, name: finalName} : c));
-                      localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
-                    }
-                  }).catch(e => console.warn("Error fetching user", e.message));
+                  try {
+                    const parsedUser = JSON.parse(senderUserStr);
+                    senderName = parsedUser.originalName || parsedUser.name || senderId;
+                  } catch(e) {}
                 }
+                
+                // Always try to fetch from Firebase to ensure we have the latest name
+                get(ref(db, `users/${senderId}`)).then(uSnap => {
+                  if (uSnap.exists()) {
+                    const uData = uSnap.val();
+                    const finalName = uData.originalName || uData.name || senderId;
+                    
+                    // Update the chat name in state
+                    setChats(curr => curr.map(c => c.id === chatId ? {...c, name: finalName} : c));
+                    
+                    // Save to local storage for next time
+                    localStorage.setItem(`mymsg_user_${senderId}`, JSON.stringify(uData));
+                    
+                    // Add them to contacts automatically so they appear in the new chat list too
+                    const existingContacts = JSON.parse(localStorage.getItem(`mymsg_contacts_${currentUser.id}`) || '[]');
+                    if (!existingContacts.includes(senderId)) {
+                      existingContacts.push(senderId);
+                      localStorage.setItem(`mymsg_contacts_${currentUser.id}`, JSON.stringify(existingContacts));
+                    }
+                  }
+                }).catch(e => console.warn("Error fetching user", e.message));
                 
                 // Asegurarse de ordenar los mensajes
                 const sortedMsgs = [...fbMsgs].sort((a, b) => a.timestamp - b.timestamp);
