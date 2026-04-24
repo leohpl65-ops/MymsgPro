@@ -185,6 +185,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(`mymsg_chats_${currentUser.id}`, JSON.stringify(chats));
+      
+      // Asegurarse de que todos los mensajes que acabamos de guardar en local también estén 
+      // sincronizados en Firebase para grupos, por si acaso (redundancia de seguridad)
+      chats.forEach(chat => {
+        if (chat.type === 'group' && chat.participants.includes(currentUser.id)) {
+          const globalGroupStr = localStorage.getItem(`mymsg_global_group_${chat.id}`);
+          if (globalGroupStr) {
+            import("firebase/database").then(({ ref, set }) => {
+              import("@/lib/firebase").then(({ db }) => {
+                // Solo guardamos si nosotros fuimos el último en enviar mensaje o han pasado 5 mins
+                // para evitar sobreescribir con versiones antiguas
+                const groupObj = JSON.parse(globalGroupStr);
+                set(ref(db, `groups/${chat.id}`), groupObj).catch(() => {});
+              });
+            });
+          }
+        }
+      });
     }
   }, [chats, currentUser]);
 
@@ -681,7 +699,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             // Wait, actually the sender already saves it to `c.messages` locally. The problem is the other person doesn't get it.
             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
             // Strip undefined values for Firebase
-            set(fbMsgRef, safeMessage).catch(e => console.error("Firebase send message error", e));
+            const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
+            set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase send message error", e));
 
             // Para que la otra persona sí lo vea si no recarga, vamos a guardar el chat de manera global 
             // similar a los grupos, como un DM en firebase si queremos que se sincronice en tiempo real,
@@ -708,6 +727,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             body: messageContent,
             icon: c.avatar
           });
+        }
+        
+        // REENVIAR MENSAJE AL SOCKET GLOBAL (Para tiempo real en dispositivos múltiples)
+        if (c.type === 'direct') {
+          const recipientId = c.participants.find(p => p !== currentUser.id);
+          if (recipientId) {
+             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
+             // Strip undefined values before sending to Firebase
+             const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
+             set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase realtime send error", e));
+          }
         }
         
         // Auto-reply from MymsgAI

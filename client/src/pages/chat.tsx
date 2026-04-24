@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage, markChatAsRead } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage, markChatAsRead, updateGroup } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
@@ -337,6 +337,16 @@ export default function ChatPage() {
         ) : (
           <>
              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
+             
+             <Button 
+               size="icon" 
+               variant="ghost" 
+               className="text-muted-foreground shrink-0"
+               onClick={() => fileInputRef.current?.click()}
+             >
+               <ImageIcon className="h-6 w-6" />
+             </Button>
+
              <Button 
                size="icon" 
                variant="ghost" 
