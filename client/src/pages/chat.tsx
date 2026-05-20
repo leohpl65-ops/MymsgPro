@@ -58,6 +58,16 @@ export default function ChatPage() {
               setIsReceivingCall(true);
               setIsCalling(false);
               setShowCallScreen(true);
+              
+              if ('Notification' in window && Notification.permission === 'granted') {
+                const notification = new Notification(`¡Tienes una llamada!`, {
+                  body: `${callData.fromName} te está llamando...`,
+                  icon: callData.fromAvatar
+                });
+                notification.onclick = function() {
+                  window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+                };
+              }
             } else if (callData.type === 'accept' && callData.to === currentUser.id) {
               setIsCalling(true);
             } else if (callData.type === 'reject') {

@@ -743,10 +743,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if ('Notification' in window && Notification.permission === 'granted') {
           const senderName = currentUser.name;
           const messageContent = type === 'text' ? censoredText : (type === 'image' ? 'Envió una imagen' : 'Envió un audio');
-          new Notification(`${senderName} en ${c.name}`, {
-            body: messageContent,
+          const notification = new Notification(`¡Alguien te ha hablado!`, {
+            body: `${senderName} en ${c.name}: ${messageContent}`,
             icon: c.avatar
           });
+          notification.onclick = function() {
+            window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+          };
         }
         
         // Auto-reply from MymsgAI
