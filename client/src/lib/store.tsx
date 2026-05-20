@@ -25,6 +25,7 @@ export interface Message {
   mediaUrl?: string;
   read?: boolean;
   status: 'sent' | 'delivered' | 'read';
+  replyTo?: string;
 }
 
 export interface Chat {
@@ -62,7 +63,7 @@ interface StoreContextType {
   createGroup: (name: string) => void;
   joinGroup: (groupId: string) => void;
   addContact: (contactId: string, contactName: string) => boolean;
-  sendMessage: (chatId: string, text: string, type?: 'text' | 'image' | 'audio', mediaUrl?: string) => void;
+  sendMessage: (chatId: string, text: string, type?: 'text' | 'image' | 'audio', mediaUrl?: string, replyTo?: string) => void;
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
   updateGroup: (groupId: string, updates: Partial<Chat>) => void;
@@ -258,8 +259,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 const newMsgs = fbMsgs.filter(m => !existingMsgIds.has(m.id));
                 
                 if (newMsgs.length > 0) {
-                  // Mantenemos los mensajes anteriores y agregamos los nuevos
-                  const allMessages = [...newChats[chatIndex].messages, ...newMsgs];
+                  // Mantenemos los mensajes anteriores y agregamos los nuevos, filtrando duplicados exactos
+                  const allMessages = [...newChats[chatIndex].messages];
+                  
+                  newMsgs.forEach(newMsg => {
+                    const isDuplicate = allMessages.some(m => 
+                      m.id === newMsg.id || 
+                      (m.text === newMsg.text && m.timestamp === newMsg.timestamp && m.senderId === newMsg.senderId) ||
+                      (m.text === newMsg.text && m.senderId === newMsg.senderId && Math.abs(m.timestamp - newMsg.timestamp) < 5000)
+                    );
+                    
+                    if (!isDuplicate) {
+                      allMessages.push(newMsg);
+                    }
+                  });
+
                   // Asegurarse de ordenar por timestamp por si acaso
                   allMessages.sort((a, b) => a.timestamp - b.timestamp);
                   
@@ -631,7 +645,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' = 'text', mediaUrl?: string) => {
+  const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' = 'text', mediaUrl?: string, replyTo?: string) => {
     if (!currentUser) return;
     
     // Censor bad words and drugs
@@ -649,6 +663,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     
     if (mediaUrl) {
       newMessage.mediaUrl = mediaUrl;
+    }
+
+    if (replyTo) {
+      newMessage.replyTo = replyTo;
     }
     
     // Firebase doesn't accept undefined values
@@ -694,7 +712,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } else {
           // Send message to global Firebase queue for the recipient
           const recipientId = c.participants.find(p => p !== currentUser.id);
-          if (recipientId) {
+          if (recipientId && recipientId !== 'mymsgai') {
             // ALSO WRITE TO SENDER'S OFFLINE QUEUE (So if sender refreshes before the receiver sees it, it's not lost locally)
             // Wait, actually the sender already saves it to `c.messages` locally. The problem is the other person doesn't get it.
             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
@@ -732,7 +750,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // REENVIAR MENSAJE AL SOCKET GLOBAL (Para tiempo real en dispositivos múltiples)
         if (c.type === 'direct') {
           const recipientId = c.participants.find(p => p !== currentUser.id);
-          if (recipientId) {
+          if (recipientId && recipientId !== 'mymsgai') {
              const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
              // Strip undefined values before sending to Firebase
              const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
@@ -918,8 +936,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const messageToReplyTo = chat?.messages.find(m => m.id === messageId);
     
     if (messageToReplyTo) {
-      const formattedReplyText = `[Respondiendo a: ${messageToReplyTo.text.substring(0, 30)}${messageToReplyTo.text.length > 30 ? '...' : ''}]\n${replyText}`;
-      sendMessage(chatId, formattedReplyText, 'text');
+      sendMessage(chatId, replyText, 'text', undefined, messageId);
     }
   };
 

@@ -85,6 +85,37 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
           </div>
           
           <Button onClick={handleSave} className="w-full">Guardar</Button>
+          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full">
+                <AlertCircle className="mr-2 h-4 w-4" /> ¿Cómo hacer?
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Guía de uso MyMsg</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4 text-sm">
+                <div>
+                  <h3 className="font-bold text-base mb-1">1. Cómo añadir amigos</h3>
+                  <p className="text-muted-foreground">Primero mira en tus configuraciones tu ID. Luego tu amigo en la sección de agregar amigos debe poner esa ID, también pueden hacerlo al revés.</p>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base mb-1">2. Cómo crear un grupo</h3>
+                  <p className="text-muted-foreground">Ve al botón en la pantalla de inicio que tiene 👥+ y entra a "Crear grupo", ponle un nombre y listo.</p>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base mb-1">3. Cómo unirse a un grupo</h3>
+                  <p className="text-muted-foreground">Similar a cómo agregar a un amigo, ve a las configuraciones del grupo, allí hay una ID. Tu amigo debe entrar a 👥+ y poner ese ID y listo.</p>
+                </div>
+                <div className="mt-6 pt-4 border-t text-center font-semibold text-primary">
+                  ¡Disfruta de MyMsg :D!
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="destructive" className="w-full">
