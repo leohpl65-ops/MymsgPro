@@ -741,15 +741,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         
         // Send browser notification if permission granted
         if ('Notification' in window && Notification.permission === 'granted') {
-          const senderName = currentUser.name;
-          const messageContent = type === 'text' ? censoredText : (type === 'image' ? 'Envió una imagen' : 'Envió un audio');
-          const notification = new Notification(`¡Alguien te ha hablado!`, {
-            body: `${senderName} en ${c.name}: ${messageContent}`,
-            icon: c.avatar
-          });
-          notification.onclick = function() {
-            window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
-          };
+          try {
+            const senderName = currentUser.name;
+            const messageContent = type === 'text' ? censoredText : (type === 'image' ? 'Envió una imagen' : 'Envió un audio');
+            const notification = new Notification(`¡Alguien te ha hablado!`, {
+              body: `${senderName} en ${c.name}: ${messageContent}`,
+              icon: c.avatar
+            });
+            notification.onclick = function() {
+              window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+            };
+          } catch (e) {
+            console.warn("Notification error (mobile browsers require ServiceWorker):", e);
+          }
         }
         
         // Auto-reply from MymsgAI

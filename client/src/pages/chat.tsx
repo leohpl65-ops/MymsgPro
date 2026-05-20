@@ -60,19 +60,23 @@ export default function ChatPage() {
               setShowCallScreen(true);
               
               if ('Notification' in window && Notification.permission === 'granted') {
-                const notification = new Notification(`¡Tienes una llamada!`, {
-                  body: `${callData.fromName} te está llamando...`,
-                  icon: callData.fromAvatar
-                });
-                notification.onclick = function() {
-                  window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
-                };
+                try {
+                  const notification = new Notification(`¡Tienes una llamada!`, {
+                    body: `${callData.fromName} te está llamando...`,
+                    icon: callData.fromAvatar
+                  });
+                  notification.onclick = function() {
+                    window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+                  };
+                } catch(e) {
+                  console.warn("Notification error:", e);
+                }
               }
             } else if (callData.type === 'accept' && callData.to === currentUser.id) {
               setIsCalling(true);
             } else if (callData.type === 'reject') {
               import("@/hooks/use-toast").then(({ toast }) => {
-                toast({ description: "Llamada no recibida", variant: "destructive" });
+                toast({ description: "Llamada rechazada", variant: "destructive" });
               });
               setShowCallScreen(false);
               setIsCalling(false);
@@ -110,6 +114,13 @@ export default function ChatPage() {
           fromAvatar: currentUser.avatar,
           chatId: chat.id,
           timestamp: Date.now()
+        });
+        
+        // Also listen to my own call reference for answers/rejections
+        const myCallRef = ref(db, `calls/${currentUser.id}`);
+        set(myCallRef, {
+           type: 'calling',
+           to: recipientId
         });
         
         // Auto-end if not answered in 30s
