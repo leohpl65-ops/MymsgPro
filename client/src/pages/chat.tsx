@@ -6,7 +6,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, MicOff, PhoneOff, Phone, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut, Copy, PlusCircle } from "lucide-react";
+import { ArrowLeft, Send, Mic, MicOff, PhoneOff, Phone, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut, Copy, PlusCircle, Check, CheckCheck, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -277,7 +277,24 @@ export default function ChatPage() {
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-sm truncate">{chat.name}</h2>
           <p className="text-xs text-muted-foreground truncate">
-            {chat.type === 'group' ? `${chat.participants.length} miembros` : 'En línea'}
+            {chat.type === 'group' ? `${chat.participants.length} miembros` : (
+              (() => {
+                const friendId = chat.participants.find(p => p !== currentUser?.id);
+                if (friendId === 'mymsgai') return 'En línea';
+                
+                try {
+                  const friendStr = localStorage.getItem(`mymsg_user_${friendId}`);
+                  if (friendStr) {
+                    const friendUser = JSON.parse(friendStr);
+                    if (friendUser.status === 'online') {
+                      return <span className="text-green-500">En línea</span>;
+                    }
+                  }
+                } catch(e) {}
+                
+                return <span className="text-gray-400">Desconectado</span>;
+              })()
+            )}
           </p>
         </div>
 
@@ -378,8 +395,30 @@ export default function ChatPage() {
                   </div>
                 )}
                 
-                {msg.type === 'image' && (
-                  <img src={msg.mediaUrl} className="rounded-lg max-w-full mt-1 mb-1" />
+                {msg.type === 'image' && msg.mediaUrl && (
+                  <div className="flex flex-col mt-1 mb-1">
+                    {msg.replyTo && (
+                      <div 
+                        className={cn(
+                          "text-xs mb-1 px-2 py-1 rounded border-l-2 cursor-pointer opacity-90",
+                          isMe ? "bg-primary-foreground/20 border-primary-foreground text-primary-foreground" : "bg-muted border-primary text-muted-foreground"
+                        )}
+                        onClick={() => {
+                          const targetEl = document.getElementById(`message-${msg.replyTo}`);
+                          if (targetEl) {
+                            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            targetEl.classList.add('bg-opacity-50', 'ring-2', 'ring-offset-2', 'ring-primary');
+                            setTimeout(() => {
+                              targetEl.classList.remove('bg-opacity-50', 'ring-2', 'ring-offset-2', 'ring-primary');
+                            }, 1500);
+                          }
+                        }}
+                      >
+                        {chat.messages.find(m => m.id === msg.replyTo)?.text || 'Mensaje original'}
+                      </div>
+                    )}
+                    <img src={msg.mediaUrl} alt="Enviada" className="rounded-lg max-w-full h-auto max-h-[300px] object-contain" />
+                  </div>
                 )}
 
                 {msg.type === 'audio' && (
@@ -391,13 +430,20 @@ export default function ChatPage() {
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                   {isMe && (
-                    <div className="flex items-center">
-                      <span className={cn(
-                        "text-[10px]",
-                        msg.status === 'read' ? "text-blue-400" : "text-primary-foreground/70"
-                      )}>
-                        {msg.status === 'sent' ? '✔' : '✔✔'}
-                      </span>
+                    <div className="flex items-center ml-1">
+                      {msg.status === 'sent' && !msg.read ? (
+                        <span className="text-[10px] text-primary-foreground/70">
+                          <Check className="h-3 w-3" />
+                        </span>
+                      ) : msg.status === 'read' || msg.read ? (
+                        <span className="text-[10px] text-blue-400 flex">
+                          <CheckCheck className="h-3 w-3" />
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-primary-foreground/70">
+                          <Clock className="h-3 w-3" />
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
