@@ -678,8 +678,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Update streak
         const today = new Date().toISOString().split('T')[0];
         let newStreak = c.streak || 0;
-        if (c.lastInteractionDay !== today) {
-          newStreak += 1;
+        
+        // Reset streak if more than 1 day has passed without interaction
+        if (c.lastInteractionDay) {
+          const lastDate = new Date(c.lastInteractionDay);
+          const currentDate = new Date(today);
+          const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays > 1) {
+            newStreak = 1; // Reset to 1 because they are interacting today
+          } else if (c.lastInteractionDay !== today) {
+            newStreak += 1;
+          }
+        } else {
+          newStreak = 1;
         }
 
         const updatedChat = {
@@ -713,27 +726,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Send message to global Firebase queue for the recipient
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId && recipientId !== 'mymsgai') {
-            // ALSO WRITE TO SENDER'S OFFLINE QUEUE (So if sender refreshes before the receiver sees it, it's not lost locally)
-            // Wait, actually the sender already saves it to `c.messages` locally. The problem is the other person doesn't get it.
-            const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
-            // Strip undefined values for Firebase
-            const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
-            set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase send message error", e));
-
-            // Para que la otra persona sí lo vea si no recarga, vamos a guardar el chat de manera global 
-            // similar a los grupos, como un DM en firebase si queremos que se sincronice en tiempo real,
-            // pero para no rehacer todo el sistema ahora mismo, simplemente seguimos usando el sistema offline
-            // El receptor lo leerá cuando se ejecute el listener de onValue en store.tsx (línea ~230)
+             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
+             // Strip undefined values before sending to Firebase
+             const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
+             set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase realtime send error", e));
 
             // Keep local fallback just in case
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
             const offlineMsgs = JSON.parse(localStorage.getItem(offlineKey) || '[]');
             offlineMsgs.push(newMessage);
             localStorage.setItem(offlineKey, JSON.stringify(offlineMsgs));
-            
-            // 🔥 ARREGLO PARA QUE EL RECEPTOR LO VEA EN EL MOMENTO SIN RECARGAR 🔥
-            // Escribimos también en una ruta pública global de este chat específico que ambos puedan escuchar
-            // Para el futuro, pero por ahora el listener de offline_messages debería captarlo si está en la app.
           }
         }
         
@@ -745,17 +747,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             body: messageContent,
             icon: c.avatar
           });
-        }
-        
-        // REENVIAR MENSAJE AL SOCKET GLOBAL (Para tiempo real en dispositivos múltiples)
-        if (c.type === 'direct') {
-          const recipientId = c.participants.find(p => p !== currentUser.id);
-          if (recipientId && recipientId !== 'mymsgai') {
-             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
-             // Strip undefined values before sending to Firebase
-             const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
-             set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase realtime send error", e));
-          }
         }
         
         // Auto-reply from MymsgAI
