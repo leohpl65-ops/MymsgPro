@@ -6,7 +6,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Send, Mic, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut, Copy, PlusCircle } from "lucide-react";
+import { ArrowLeft, Send, Mic, MicOff, PhoneOff, Phone, Image as ImageIcon, Smile, Settings, Flag, Wallpaper, X, RotateCcw, Share2, Reply, Trash2, LogOut, Copy, PlusCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,135 @@ export default function ChatPage() {
   const [showForwardDialog, setShowForwardDialog] = useState(false);
   const [messageToForward, setMessageToForward] = useState<string | null>(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [showCallScreen, setShowCallScreen] = useState(false);
+  const [isCalling, setIsCalling] = useState(false);
+  const [isReceivingCall, setIsReceivingCall] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [callPeer, setCallPeer] = useState<{ id: string; name: string; avatar: string } | null>(null);
+
+  // Call Signaling via Firebase
+  useEffect(() => {
+    if (!currentUser || !chat || chat.type !== 'direct') return;
+
+    let unsubscribe = () => {};
+
+    import("firebase/database").then(({ ref, onValue, set, onDisconnect }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        const myCallRef = ref(db, `calls/${currentUser.id}`);
+        
+        unsubscribe = onValue(myCallRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const callData = snapshot.val();
+            if (callData.type === 'offer' && callData.from !== currentUser.id && callData.chatId === chat.id) {
+              setCallPeer({ id: callData.from, name: callData.fromName, avatar: callData.fromAvatar });
+              setIsReceivingCall(true);
+              setIsCalling(false);
+              setShowCallScreen(true);
+            } else if (callData.type === 'accept' && callData.to === currentUser.id) {
+              setIsCalling(true);
+            } else if (callData.type === 'reject') {
+              import("@/hooks/use-toast").then(({ toast }) => {
+                toast({ description: "Llamada no recibida", variant: "destructive" });
+              });
+              setShowCallScreen(false);
+              setIsCalling(false);
+              set(myCallRef, null);
+            } else if (callData.type === 'end') {
+              setShowCallScreen(false);
+              setIsCalling(false);
+              setIsReceivingCall(false);
+              set(myCallRef, null);
+            }
+          }
+        });
+      });
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, chat]);
+
+  const initiateCall = () => {
+    if (!currentUser || !chat) return;
+    const recipientId = chat.participants.find(p => p !== currentUser.id);
+    if (!recipientId) return;
+
+    setIsCalling(true);
+    setIsReceivingCall(false);
+    setShowCallScreen(true);
+    setCallPeer({ id: recipientId, name: chat.name, avatar: chat.avatar || '' });
+
+    import("firebase/database").then(({ ref, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        set(ref(db, `calls/${recipientId}`), {
+          type: 'offer',
+          from: currentUser.id,
+          fromName: currentUser.name,
+          fromAvatar: currentUser.avatar,
+          chatId: chat.id,
+          timestamp: Date.now()
+        });
+        
+        // Auto-end if not answered in 30s
+        setTimeout(() => {
+          if (isCalling && !isReceivingCall) {
+            endCall(recipientId);
+          }
+        }, 30000);
+      });
+    });
+  };
+
+  const acceptCall = () => {
+    if (!currentUser || !callPeer) return;
+    setIsReceivingCall(false);
+    setIsCalling(true);
+
+    import("firebase/database").then(({ ref, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        set(ref(db, `calls/${callPeer.id}`), {
+          type: 'accept',
+          from: currentUser.id,
+          to: callPeer.id
+        });
+      });
+    });
+  };
+
+  const rejectCall = () => {
+    if (!currentUser || !callPeer) return;
+    setShowCallScreen(false);
+    setIsReceivingCall(false);
+
+    import("firebase/database").then(({ ref, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        set(ref(db, `calls/${callPeer.id}`), {
+          type: 'reject',
+          from: currentUser.id,
+          to: callPeer.id
+        });
+        set(ref(db, `calls/${currentUser.id}`), null);
+      });
+    });
+  };
+
+  const endCall = (peerId?: string) => {
+    const target = peerId || callPeer?.id;
+    if (!currentUser || !target) return;
+    
+    setShowCallScreen(false);
+    setIsCalling(false);
+    setIsReceivingCall(false);
+
+    import("firebase/database").then(({ ref, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        set(ref(db, `calls/${target}`), {
+          type: 'end',
+          from: currentUser.id
+        });
+        set(ref(db, `calls/${currentUser.id}`), null);
+      });
+    });
+  };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,7 +184,12 @@ export default function ChatPage() {
 
   const handleSend = () => {
     if (!inputText.trim()) return;
-    sendMessage(chat.id, inputText, 'text');
+    if (replyingTo) {
+      replyToMessage(chat.id, replyingTo, inputText);
+      setReplyingTo(null);
+    } else {
+      sendMessage(chat.id, inputText, 'text');
+    }
     setInputText("");
   };
 
@@ -147,6 +281,12 @@ export default function ChatPage() {
           </p>
         </div>
 
+        {chat.type === 'direct' && chat.id !== 'dm-mymsgai' && !chat.participants.includes('mymsgai') && (
+          <Button size="icon" variant="ghost" onClick={initiateCall}>
+            <Phone className="h-5 w-5" />
+          </Button>
+        )}
+
         <Button size="icon" variant="ghost" onClick={() => setShowSettings(true)}>
           <Settings className="h-5 w-5" />
         </Button>
@@ -181,17 +321,24 @@ export default function ChatPage() {
                 longPressTimersRef.current.delete(msg.id);
               }
             };
+
+            const handleTouchMove = () => {
+               // Si el usuario desliza, cancelamos el timer del toque largo
+               handleMouseUp();
+            };
             
             return (
               <motion.div
                 key={msg.id}
+                id={`message-${msg.id}`}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2 shadow-sm text-sm break-words relative cursor-pointer hover:opacity-80 transition",
+                  "max-w-[80%] rounded-2xl px-4 py-2 shadow-sm text-sm break-words relative cursor-pointer transition",
                   isMe 
                     ? "bg-primary text-primary-foreground self-end rounded-br-none" 
-                    : "bg-white text-foreground self-start rounded-bl-none"
+                    : "bg-white text-foreground self-start rounded-bl-none",
+                  selectedMessage === msg.id && "ring-2 ring-primary ring-offset-2 opacity-80"
                 )}
                 onContextMenu={(e) => { e.preventDefault(); setSelectedMessage(msg.id); }}
                 onMouseDown={handleMouseDown}
@@ -199,12 +346,37 @@ export default function ChatPage() {
                 onMouseLeave={handleMouseUp}
                 onTouchStart={handleMouseDown}
                 onTouchEnd={handleMouseUp}
+                onTouchMove={handleTouchMove}
               >
                 {!isMe && chat.type === 'group' && (
                   <p className="text-[10px] font-bold opacity-70 mb-1">{msg.senderId}</p>
                 )}
                 
-                {msg.type === 'text' && <p>{msg.text}</p>}
+                {msg.type === 'text' && (
+                  <div className="flex flex-col">
+                    {msg.replyTo && (
+                      <div 
+                        className={cn(
+                          "text-xs mb-1 px-2 py-1 rounded border-l-2 cursor-pointer opacity-90",
+                          isMe ? "bg-primary-foreground/20 border-primary-foreground" : "bg-muted border-primary text-muted-foreground"
+                        )}
+                        onClick={() => {
+                          const targetEl = document.getElementById(`message-${msg.replyTo}`);
+                          if (targetEl) {
+                            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            targetEl.classList.add('bg-opacity-50', 'ring-2', 'ring-offset-2', 'ring-primary');
+                            setTimeout(() => {
+                              targetEl.classList.remove('bg-opacity-50', 'ring-2', 'ring-offset-2', 'ring-primary');
+                            }, 1500);
+                          }
+                        }}
+                      >
+                        {chat.messages.find(m => m.id === msg.replyTo)?.text || 'Mensaje original'}
+                      </div>
+                    )}
+                    <p>{msg.text}</p>
+                  </div>
+                )}
                 
                 {msg.type === 'image' && (
                   <img src={msg.mediaUrl} className="rounded-lg max-w-full mt-1 mb-1" />
@@ -260,10 +432,10 @@ export default function ChatPage() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="fixed inset-0 z-40 flex items-center justify-center p-4"
+          className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/20"
           onClick={() => setSelectedMessage(null)}
         >
-          <div className="bg-white rounded-lg shadow-xl p-2 space-y-1 relative" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-lg shadow-xl p-2 space-y-1 relative w-full max-w-[250px]" onClick={(e) => e.stopPropagation()}>
             <Button size="sm" variant="ghost" className="w-full justify-start text-sm" onClick={() => setSelectedMessage(null)}>
               <X className="h-4 w-4 mr-2" /> Cerrar
             </Button>
@@ -305,8 +477,9 @@ export default function ChatPage() {
       {/* Reply Indicator */}
       {replyingTo && (
         <div className="bg-muted p-2 border-t flex items-center justify-between">
-          <div className="flex-1">
-            <p className="text-xs text-muted-foreground">Respondiendo a un mensaje</p>
+          <div className="flex-1 overflow-hidden pr-2">
+            <p className="text-xs text-muted-foreground font-semibold mb-0.5">Respondiendo a:</p>
+            <p className="text-xs truncate opacity-80">{chat.messages.find(m => m.id === replyingTo)?.text}</p>
           </div>
           <Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}>
             <X className="h-4 w-4" />
@@ -518,6 +691,82 @@ export default function ChatPage() {
            </div>
         </DialogContent>
       </Dialog>
+
+      {/* Pantalla de Llamada */}
+      <AnimatePresence>
+        {showCallScreen && (
+          <motion.div 
+            initial={{ opacity: 0, y: "100%" }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: "100%" }}
+            className="fixed inset-0 z-50 bg-slate-900 text-white flex flex-col"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
+              <div className="text-center space-y-2">
+                <h2 className="text-2xl font-bold">{callPeer?.name || chat.name}</h2>
+                <p className="text-sm text-slate-400">
+                  {isReceivingCall ? `${callPeer?.name || chat.name} te está llamando...` : isCalling ? "Llamada en curso..." : "Llamando..."}
+                </p>
+              </div>
+              
+              <div className="flex gap-4 items-center justify-center">
+                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-700">
+                  <img src={currentUser.avatar} className="w-full h-full object-cover" />
+                </div>
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-primary">
+                  <img src={callPeer?.avatar || chat.avatar} className="w-full h-full object-cover" />
+                </div>
+              </div>
+
+              {!isReceivingCall && (
+                <div className="mt-auto pt-12 flex gap-6 justify-center w-full max-w-xs mx-auto">
+                  <Button 
+                    size="icon" 
+                    variant="outline" 
+                    className={cn(
+                      "w-16 h-16 rounded-full border-none shadow-lg",
+                      isMicMuted ? "bg-white text-slate-900" : "bg-slate-700/50 text-white hover:bg-slate-700"
+                    )}
+                    onClick={() => setIsMicMuted(!isMicMuted)}
+                  >
+                    {isMicMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+                  </Button>
+                  
+                  <Button 
+                    size="icon" 
+                    variant="destructive" 
+                    className="w-16 h-16 rounded-full shadow-lg hover:bg-red-600 bg-white"
+                    onClick={() => endCall()}
+                  >
+                    <PhoneOff className="h-6 w-6 text-red-500" />
+                  </Button>
+                </div>
+              )}
+
+              {isReceivingCall && (
+                <div className="mt-auto pt-12 flex gap-8 justify-center w-full max-w-xs mx-auto">
+                  <Button 
+                    size="icon" 
+                    className="w-16 h-16 rounded-full bg-white hover:bg-slate-200 shadow-lg text-red-500"
+                    onClick={rejectCall}
+                  >
+                    <X className="h-8 w-8" />
+                  </Button>
+                  
+                  <Button 
+                    size="icon" 
+                    className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 shadow-lg text-white animate-bounce"
+                    onClick={acceptCall}
+                  >
+                    <Phone className="h-6 w-6" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </MobileLayout>
   );
 }
