@@ -68,6 +68,12 @@ export default function RegisterPage() {
     
     // Then perform login
     login(data.name, autoId, data.password);
+    
+    // Request notification permission
+    if ('Notification' in window && Notification.permission !== 'granted') {
+      Notification.requestPermission().catch(() => {});
+    }
+    
     setLocation("/contacts");
   };
 

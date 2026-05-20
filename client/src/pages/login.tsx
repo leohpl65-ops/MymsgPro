@@ -181,6 +181,11 @@ export default function LoginPage() {
       reset();
       setAdminPassword("");
       setShowAdminPassword(false);
+      
+      // Request notification permission
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission().catch(() => {});
+      }
     } catch (e: any) {
       const newAttempts = loginAttempts + 1;
       setLoginAttempts(newAttempts);
