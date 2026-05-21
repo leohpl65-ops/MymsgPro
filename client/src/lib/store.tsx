@@ -631,14 +631,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const existing = chats.find(c => c.type === 'direct' && c.participants.includes(contactId) && c.participants.includes(currentUser.id));
     if (existing) return false;
 
+    // Fetch previous messages for this contact from localStorage just in case
+    const offlineKey = `mymsg_offline_msgs_${currentUser.id}_from_${contactId}`;
+    const previousMessages = JSON.parse(localStorage.getItem(offlineKey) || '[]');
+
     const newChat: Chat = {
       id: `dm-${[currentUser.id, contactId].sort().join('-')}`,
       type: 'direct',
       name: contactName,
       avatar: generateUserAvatarSvg(contactId),
       participants: [currentUser.id, contactId],
-      messages: [],
-      lastMessageTime: Date.now(),
+      messages: previousMessages,
+      lastMessage: previousMessages.length > 0 ? previousMessages[previousMessages.length - 1].text : undefined,
+      lastMessageTime: previousMessages.length > 0 ? previousMessages[previousMessages.length - 1].timestamp : Date.now(),
       userId: currentUser.id
     };
     setChats(prev => [newChat, ...prev]);
@@ -706,13 +711,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         
         // Broadcast for groups or handle offline for DMs (Firebase)
         if (c.type === 'group') {
-          const globalGroupRef = ref(db, `groups/${c.id}`);
-          // Strip undefined values for Firebase
-          const groupDataToSave = JSON.parse(JSON.stringify({
-            ...updatedChat,
-            messages: updatedChat.messages
-          }));
-          set(globalGroupRef, groupDataToSave).catch(e => console.error("Firebase group send error", e));
+          import("@/lib/firebase").then(({ db }) => {
+            import("firebase/database").then(({ ref, set }) => {
+              const globalGroupRef = ref(db, `groups/${c.id}`);
+              // Strip undefined values for Firebase
+              const groupDataToSave = JSON.parse(JSON.stringify({
+                ...updatedChat,
+                messages: updatedChat.messages
+              }));
+              set(globalGroupRef, groupDataToSave).catch(e => console.error("Firebase group send error", e));
+            });
+          });
           
           const globalGroupStr = localStorage.getItem(`mymsg_global_group_${c.id}`);
           if (globalGroupStr) {
@@ -726,10 +735,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Send message to global Firebase queue for the recipient
           const recipientId = c.participants.find(p => p !== currentUser.id);
           if (recipientId && recipientId !== 'mymsgai') {
-             const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
-             // Strip undefined values before sending to Firebase
-             const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
-             set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase realtime send error", e));
+             import("@/lib/firebase").then(({ db }) => {
+                import("firebase/database").then(({ ref, push, set }) => {
+                 const fbMsgRef = push(ref(db, `offline_messages/${recipientId}/from_${currentUser.id}`));
+                 // Strip undefined values before sending to Firebase
+                 const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
+                 set(fbMsgRef, cleanMsg).catch(e => console.error("Firebase realtime send error", e));
+                });
+             });
 
             // Keep local fallback just in case
             const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;

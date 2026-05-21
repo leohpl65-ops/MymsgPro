@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export default function ChatPage() {
   const [, params] = useRoute("/chat/:id");
   const [, setLocation] = useLocation();
-  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage, markChatAsRead, updateGroup } = useStore();
+  const { chats, currentUser, sendMessage, getChat, reportEntity, setChatWallpaper, forgetChat, clearChatMessages, deleteMessage, replyToMessage, forwardMessage, markChatAsRead, updateGroup, addContact } = useStore();
   
   const chatId = params?.id;
   const chat = chats.find(c => c.id === chatId);
@@ -203,8 +203,25 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.messages]);
 
+  const checkAutoAddContact = () => {
+    // Automatically add contact if this is a DM and we're sending a message
+    if (chat && chat.type === 'direct' && currentUser) {
+      const recipientId = chat.participants.find(p => p !== currentUser.id);
+      if (recipientId) {
+        const existingContacts = JSON.parse(localStorage.getItem(`mymsg_contacts_${currentUser.id}`) || '[]');
+        if (!existingContacts.includes(recipientId)) {
+          // They aren't in contacts, add them now that a message is being sent
+          addContact(recipientId, chat.name);
+        }
+      }
+    }
+  };
+
   const handleSend = () => {
     if (!inputText.trim()) return;
+    
+    checkAutoAddContact();
+    
     if (replyingTo) {
       replyToMessage(chat.id, replyingTo, inputText);
       setReplyingTo(null);
@@ -217,6 +234,8 @@ export default function ChatPage() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    checkAutoAddContact();
 
     const isAudio = file.type.startsWith('audio/');
     const isImage = file.type.startsWith('image/');
@@ -244,6 +263,7 @@ export default function ChatPage() {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         const reader = new FileReader();
         reader.onloadend = () => {
+          checkAutoAddContact();
           const base64Url = reader.result as string;
           sendMessage(chat.id, "Mensaje de voz", 'audio', base64Url);
         };

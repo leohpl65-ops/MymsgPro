@@ -265,6 +265,13 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
         const success = addContact(cleanFriendId, displayName);
         
         if (success) {
+          // Manually add to localStorage for immediate reflection if addContact doesn't
+          const existingContacts = JSON.parse(localStorage.getItem(`mymsg_contacts_${currentUser?.id}`) || '[]');
+          if (!existingContacts.includes(cleanFriendId)) {
+            existingContacts.push(cleanFriendId);
+            localStorage.setItem(`mymsg_contacts_${currentUser?.id}`, JSON.stringify(existingContacts));
+          }
+          
           setFriendId("");
           setError("");
           onOpenChange(false);
