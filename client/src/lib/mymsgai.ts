@@ -1,7 +1,7 @@
 // MymsgAI - Intelligent chatbot powered by Google Gemini
 import { containsBannedWord } from "./censor";
 
-const GEMINI_API_KEY = "AIzaSyBZnE8eDj8k6DLDTzvLGMloVjS-TsFGSpk";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 export async function getMymsgAIResponse(message: string): Promise<string> {
