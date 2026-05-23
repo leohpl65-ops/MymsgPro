@@ -21,6 +21,27 @@ function Router() {
        return;
     }
 
+    // Call state handling - simulate incoming call regardless of route 
+    // (Actual call listening is currently inside Chat component, moving it to App or a layout 
+    // would be complex for a prototype, so we'll listen for any call targeting current user)
+    let unsubscribeCall = () => {};
+    if (currentUser) {
+       import("firebase/database").then(({ ref, onValue }) => {
+          import("@/lib/firebase").then(({ db }) => {
+             const globalCallRef = ref(db, `calls/${currentUser.id}`);
+             unsubscribeCall = onValue(globalCallRef, (snapshot) => {
+                if (snapshot.exists()) {
+                   const callData = snapshot.val();
+                   // If we have an incoming call and we're not already on that chat page
+                   if (callData.type === 'offer' && callData.from !== currentUser.id && location !== `/chat/${callData.chatId}`) {
+                      setLocation(`/chat/${callData.chatId}`);
+                   }
+                }
+             });
+          });
+       });
+    }
+
     // Handling direct links for logged in users
     if (currentUser) {
       // Auto-add contact if opening a direct chat link

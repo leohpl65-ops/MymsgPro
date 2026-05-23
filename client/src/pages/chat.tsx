@@ -40,6 +40,10 @@ export default function ChatPage() {
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [callPeer, setCallPeer] = useState<{ id: string; name: string; avatar: string } | null>(null);
 
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
   // Call Signaling via Firebase
   useEffect(() => {
     if (!currentUser || !chat || chat.type !== 'direct') return;
@@ -58,6 +62,10 @@ export default function ChatPage() {
               setIsReceivingCall(true);
               setIsCalling(false);
               setShowCallScreen(true);
+              // Save the offer SDP temporarily to use it when accepting
+              if (callData.sdp) {
+                window.localStorage.setItem('mymsg_incoming_offer', callData.sdp);
+              }
               
               if ('Notification' in window && Notification.permission === 'granted') {
                 try {
@@ -72,8 +80,15 @@ export default function ChatPage() {
                   console.warn("Notification error:", e);
                 }
               }
-            } else if (callData.type === 'accept' && callData.to === currentUser.id) {
+            } else if (callData.type === 'accept' && callData.to === currentUser.id && callData.sdp) {
               setIsCalling(true);
+              if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
+                peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: callData.sdp })).catch(e => console.error("Error setting remote description", e));
+              }
+            } else if (callData.type === 'candidate' && callData.to === currentUser.id) {
+              if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription && peerConnectionRef.current.signalingState !== 'closed') {
+                peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(JSON.parse(callData.candidate))).catch(e => console.error("Error adding ice candidate", e));
+              }
             } else if (callData.type === 'reject') {
               import("@/hooks/use-toast").then(({ toast }) => {
                 toast({ description: "Llamada rechazada", variant: "destructive" });
@@ -86,6 +101,15 @@ export default function ChatPage() {
               setIsCalling(false);
               setIsReceivingCall(false);
               set(myCallRef, null);
+              
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+                localStreamRef.current = null;
+              }
+              if (peerConnectionRef.current) {
+                peerConnectionRef.current.close();
+                peerConnectionRef.current = null;
+              }
             }
           }
         });
@@ -95,7 +119,49 @@ export default function ChatPage() {
     return () => unsubscribe();
   }, [currentUser, chat]);
 
-  const initiateCall = () => {
+  const setupPeerConnection = async (recipientId: string, isInitiator: boolean) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.ontrack = (event) => {
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          import("firebase/database").then(({ ref, set }) => {
+            import("@/lib/firebase").then(({ db }) => {
+              set(ref(db, `calls/${recipientId}`), {
+                type: 'candidate',
+                candidate: JSON.stringify(event.candidate),
+                to: recipientId
+              }).catch(e => console.error(e));
+            });
+          });
+        }
+      };
+
+      return pc;
+    } catch (err) {
+      console.error("Error setting up peer connection:", err);
+      import("@/hooks/use-toast").then(({ toast }) => {
+        toast({ description: "No se pudo acceder al micrófono para la llamada", variant: "destructive" });
+      });
+      return null;
+    }
+  };
+
+  const initiateCall = async () => {
     if (!currentUser || !chat) return;
     const recipientId = chat.participants.find(p => p !== currentUser.id);
     if (!recipientId) return;
@@ -105,54 +171,93 @@ export default function ChatPage() {
     setShowCallScreen(true);
     setCallPeer({ id: recipientId, name: chat.name, avatar: chat.avatar || '' });
 
-    import("firebase/database").then(({ ref, set }) => {
-      import("@/lib/firebase").then(({ db }) => {
-        set(ref(db, `calls/${recipientId}`), {
-          type: 'offer',
-          from: currentUser.id,
-          fromName: currentUser.name,
-          fromAvatar: currentUser.avatar,
-          chatId: chat.id,
-          timestamp: Date.now()
+    const pc = await setupPeerConnection(recipientId, true);
+    if (!pc) {
+       setShowCallScreen(false);
+       setIsCalling(false);
+       return;
+    }
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      import("firebase/database").then(({ ref, set }) => {
+        import("@/lib/firebase").then(({ db }) => {
+          set(ref(db, `calls/${recipientId}`), {
+            type: 'offer',
+            from: currentUser.id,
+            fromName: currentUser.name,
+            fromAvatar: currentUser.avatar,
+            chatId: chat.id,
+            sdp: offer.sdp,
+            timestamp: Date.now()
+          });
+          
+          // Also listen to my own call reference for answers/rejections
+          const myCallRef = ref(db, `calls/${currentUser.id}`);
+          set(myCallRef, {
+             type: 'calling',
+             to: recipientId
+          });
+          
+          // Auto-end if not answered in 30s
+          setTimeout(() => {
+            if (isCalling && !isReceivingCall) {
+              endCall(recipientId);
+            }
+          }, 30000);
         });
-        
-        // Also listen to my own call reference for answers/rejections
-        const myCallRef = ref(db, `calls/${currentUser.id}`);
-        set(myCallRef, {
-           type: 'calling',
-           to: recipientId
-        });
-        
-        // Auto-end if not answered in 30s
-        setTimeout(() => {
-          if (isCalling && !isReceivingCall) {
-            endCall(recipientId);
-          }
-        }, 30000);
       });
-    });
+    } catch (e) {
+       console.error("Error creating offer:", e);
+    }
   };
 
-  const acceptCall = () => {
+  const acceptCall = async () => {
     if (!currentUser || !callPeer) return;
     setIsReceivingCall(false);
     setIsCalling(true);
 
-    import("firebase/database").then(({ ref, set }) => {
-      import("@/lib/firebase").then(({ db }) => {
-        set(ref(db, `calls/${callPeer.id}`), {
-          type: 'accept',
-          from: currentUser.id,
-          to: callPeer.id
+    const pc = await setupPeerConnection(callPeer.id, false);
+    if (!pc) return;
+
+    try {
+      const offerSdp = window.localStorage.getItem('mymsg_incoming_offer');
+      if (offerSdp) {
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offerSdp }));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        import("firebase/database").then(({ ref, set }) => {
+          import("@/lib/firebase").then(({ db }) => {
+            set(ref(db, `calls/${callPeer.id}`), {
+              type: 'accept',
+              from: currentUser.id,
+              to: callPeer.id,
+              sdp: answer.sdp
+            });
+          });
         });
-      });
-    });
+      }
+    } catch (e) {
+      console.error("Error accepting call:", e);
+    }
   };
 
   const rejectCall = () => {
     if (!currentUser || !callPeer) return;
     setShowCallScreen(false);
     setIsReceivingCall(false);
+    
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
 
     import("firebase/database").then(({ ref, set }) => {
       import("@/lib/firebase").then(({ db }) => {
@@ -173,6 +278,15 @@ export default function ChatPage() {
     setShowCallScreen(false);
     setIsCalling(false);
     setIsReceivingCall(false);
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
 
     import("firebase/database").then(({ ref, set }) => {
       import("@/lib/firebase").then(({ db }) => {
@@ -198,10 +312,38 @@ export default function ChatPage() {
     return null;
   }
 
-  // Auto-scroll to bottom
+  const [callDuration, setCallDuration] = useState(0);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat.messages]);
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !isMicMuted;
+      });
+    }
+  }, [isMicMuted]);
+
+  // Formatter for call duration (HH:MM:SS)
+  const formatDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (showCallScreen && isCalling && !isReceivingCall) {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => clearInterval(interval);
+  }, [showCallScreen, isCalling, isReceivingCall]);
 
   const checkAutoAddContact = () => {
     // Automatically add contact if this is a DM and we're sending a message
@@ -780,6 +922,7 @@ export default function ChatPage() {
       </Dialog>
 
       {/* Pantalla de Llamada */}
+      <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <AnimatePresence>
         {showCallScreen && (
           <motion.div 
@@ -792,7 +935,11 @@ export default function ChatPage() {
               <div className="text-center space-y-2">
                 <h2 className="text-2xl font-bold">{callPeer?.name || chat.name}</h2>
                 <p className="text-sm text-slate-400">
-                  {isReceivingCall ? `${callPeer?.name || chat.name} te está llamando...` : isCalling ? "Llamada en curso..." : "Llamando..."}
+                  {isReceivingCall 
+                    ? `${callPeer?.name || chat.name} te está llamando...` 
+                    : isCalling 
+                      ? formatDuration(callDuration) 
+                      : "Llamando..."}
                 </p>
               </div>
               
@@ -822,10 +969,10 @@ export default function ChatPage() {
                   <Button 
                     size="icon" 
                     variant="destructive" 
-                    className="w-16 h-16 rounded-full shadow-lg hover:bg-red-600 bg-white"
+                    className="w-16 h-16 rounded-full shadow-lg hover:bg-red-700 bg-red-600 text-white"
                     onClick={() => endCall()}
                   >
-                    <PhoneOff className="h-6 w-6 text-red-500" />
+                    <PhoneOff className="h-6 w-6" />
                   </Button>
                 </div>
               )}
