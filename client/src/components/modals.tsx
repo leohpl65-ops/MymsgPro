@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
-import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState as useStateImport } from "react";
 
@@ -333,6 +333,96 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
+export function CallHistoryModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { currentUser } = useStore();
+  const [callHistory, setCallHistory] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (open && currentUser) {
+      // In a real app, this would be a store method reading from Firebase/LocalStorage
+      // For now we'll read the mock history from LocalStorage
+      try {
+        const historyStr = localStorage.getItem(`mymsg_call_history_${currentUser.id}`);
+        if (historyStr) {
+          setCallHistory(JSON.parse(historyStr));
+        }
+      } catch (e) {
+        console.error("Error reading call history", e);
+      }
+    }
+  }, [open, currentUser]);
+
+  const clearHistory = () => {
+    if (!currentUser) return;
+    localStorage.removeItem(`mymsg_call_history_${currentUser.id}`);
+    setCallHistory([]);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xs" aria-describedby="call-history-dialog">
+        <DialogHeader>
+          <div className="flex justify-between items-center pr-6">
+            <DialogTitle>Registro de llamadas</DialogTitle>
+            {callHistory.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-red-500 h-8" onClick={clearHistory}>
+                Limpiar
+              </Button>
+            )}
+          </div>
+        </DialogHeader>
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          {callHistory.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <PhoneMissed className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">No hay llamadas recientes</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {callHistory.map((call, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-2 rounded-lg bg-slate-50 border">
+                  <div className="relative">
+                    <img src={call.peerAvatar} alt={call.peerName} className="w-10 h-10 rounded-full object-cover" />
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+                      {call.status === 'missed' ? (
+                        <PhoneMissed className="h-3 w-3 text-red-500" />
+                      ) : call.status === 'rejected' ? (
+                        <PhoneMissed className="h-3 w-3 text-yellow-500" />
+                      ) : call.direction === 'incoming' ? (
+                        <PhoneIncoming className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <PhoneForwarded className="h-3 w-3 text-green-500" />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">{call.peerName}</p>
+                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      <span>{new Date(call.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
+                      {call.status === 'answered' && call.duration && (
+                        <span>• {Math.floor(call.duration / 60)}:{(call.duration % 60).toString().padStart(2, '0')}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs font-medium">
+                    {call.status === 'missed' ? (
+                      <span className="text-red-500">Perdida</span>
+                    ) : call.status === 'rejected' ? (
+                      <span className="text-yellow-500">Rechazada</span>
+                    ) : (
+                      <span className="text-green-500">Contestada</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 export function ReportsModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { reports, deleteReport } = useStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);

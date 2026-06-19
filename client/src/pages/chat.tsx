@@ -36,9 +36,12 @@ export default function ChatPage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
+  const [isCallAccepted, setIsCallAccepted] = useState(false);
   const [isReceivingCall, setIsReceivingCall] = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [callPeer, setCallPeer] = useState<{ id: string; name: string; avatar: string } | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  const [showAiCommands, setShowAiCommands] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -82,6 +85,7 @@ export default function ChatPage() {
               }
             } else if (callData.type === 'accept' && callData.to === currentUser.id && callData.sdp) {
               setIsCalling(true);
+              setIsCallAccepted(true);
               if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
                 peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: callData.sdp })).catch(e => console.error("Error setting remote description", e));
               }
@@ -93,12 +97,19 @@ export default function ChatPage() {
               import("@/hooks/use-toast").then(({ toast }) => {
                 toast({ description: "Llamada rechazada", variant: "destructive" });
               });
+              if (chat) {
+                saveCallToHistory(callPeer?.id || callData.to, callPeer?.name || chat.name, callPeer?.avatar || chat.avatar || '', 'rejected', 'outgoing');
+              }
               setShowCallScreen(false);
               setIsCalling(false);
               set(myCallRef, null);
             } else if (callData.type === 'end') {
+              if (chat) {
+                saveCallToHistory(callPeer?.id || callData.from, callPeer?.name || chat.name, callPeer?.avatar || chat.avatar || '', isCallAccepted ? 'answered' : 'missed', isReceivingCall ? 'incoming' : 'outgoing', callDuration);
+              }
               setShowCallScreen(false);
               setIsCalling(false);
+              setIsCallAccepted(false);
               setIsReceivingCall(false);
               set(myCallRef, null);
               
@@ -118,6 +129,27 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [currentUser, chat]);
+
+  const saveCallToHistory = (peerId: string, peerName: string, peerAvatar: string, status: 'missed' | 'rejected' | 'answered', direction: 'incoming' | 'outgoing', duration?: number) => {
+    if (!currentUser) return;
+    try {
+      const historyStr = localStorage.getItem(`mymsg_call_history_${currentUser.id}`);
+      const history = historyStr ? JSON.parse(historyStr) : [];
+      const newCall = {
+        id: Date.now().toString(),
+        peerId,
+        peerName,
+        peerAvatar,
+        status,
+        direction,
+        timestamp: Date.now(),
+        duration
+      };
+      localStorage.setItem(`mymsg_call_history_${currentUser.id}`, JSON.stringify([newCall, ...history].slice(0, 50)));
+    } catch (e) {
+      console.error("Error saving call history", e);
+    }
+  };
 
   const setupPeerConnection = async (recipientId: string, isInitiator: boolean) => {
     try {
@@ -203,7 +235,8 @@ export default function ChatPage() {
           
           // Auto-end if not answered in 30s
           setTimeout(() => {
-            if (isCalling && !isReceivingCall) {
+            if (isCalling && !isCallAccepted && chat) {
+              saveCallToHistory(recipientId, chat.name, chat.avatar || '', 'missed', 'outgoing');
               endCall(recipientId);
             }
           }, 30000);
@@ -247,6 +280,7 @@ export default function ChatPage() {
 
   const rejectCall = () => {
     if (!currentUser || !callPeer) return;
+    saveCallToHistory(callPeer.id, callPeer.name, callPeer.avatar, 'rejected', 'incoming');
     setShowCallScreen(false);
     setIsReceivingCall(false);
     
@@ -273,10 +307,13 @@ export default function ChatPage() {
 
   const endCall = (peerId?: string) => {
     const target = peerId || callPeer?.id;
-    if (!currentUser || !target) return;
+    if (!currentUser || !target || !chat) return;
+    
+    saveCallToHistory(target, callPeer?.name || chat.name, callPeer?.avatar || chat.avatar || '', isCallAccepted ? 'answered' : 'missed', isReceivingCall ? 'incoming' : 'outgoing', callDuration);
     
     setShowCallScreen(false);
     setIsCalling(false);
+    setIsCallAccepted(false);
     setIsReceivingCall(false);
 
     if (localStreamRef.current) {
@@ -335,7 +372,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (showCallScreen && isCalling && !isReceivingCall) {
+    if (showCallScreen && isCallAccepted) {
       interval = setInterval(() => {
         setCallDuration(prev => prev + 1);
       }, 1000);
@@ -343,7 +380,7 @@ export default function ChatPage() {
       setCallDuration(0);
     }
     return () => clearInterval(interval);
-  }, [showCallScreen, isCalling, isReceivingCall]);
+  }, [showCallScreen, isCallAccepted]);
 
   const checkAutoAddContact = () => {
     // Automatically add contact if this is a DM and we're sending a message
@@ -486,6 +523,12 @@ export default function ChatPage() {
             <Phone className="h-5 w-5" />
           </Button>
         )}
+        
+        {chat.id === 'dm-mymsgai' && (
+          <Button size="icon" variant="ghost" onClick={() => setShowAiCommands(true)}>
+            <div className="font-bold flex items-center justify-center border-2 border-current rounded-full w-5 h-5 text-xs">/</div>
+          </Button>
+        )}
 
         <Button size="icon" variant="ghost" onClick={() => setShowSettings(true)}>
           <Settings className="h-5 w-5" />
@@ -506,8 +549,16 @@ export default function ChatPage() {
         )}
         
         <div className="relative z-10 flex flex-col gap-2 pb-2">
-          {chat.messages.map((msg, idx) => {
+          {chat.messages.filter(msg => !msg.isDeletedForMe && !(msg.isDeletedForEveryone && msg.senderId !== currentUser.id && msg.type !== 'system')).map((msg, idx) => {
             const isMe = msg.senderId === currentUser.id;
+            const msgDate = new Date(msg.timestamp);
+            const prevMsg = idx > 0 ? chat.messages[idx - 1] : null;
+            const prevMsgDate = prevMsg ? new Date(prevMsg.timestamp) : null;
+            
+            const showDateDivider = !prevMsgDate || 
+              msgDate.getDate() !== prevMsgDate.getDate() || 
+              msgDate.getMonth() !== prevMsgDate.getMonth() || 
+              msgDate.getFullYear() !== prevMsgDate.getFullYear();
             
             const handleMouseDown = () => {
               const timer = setTimeout(() => setSelectedMessage(msg.id), 500);
@@ -528,9 +579,16 @@ export default function ChatPage() {
             };
             
             return (
-              <motion.div
-                key={msg.id}
-                id={`message-${msg.id}`}
+              <React.Fragment key={msg.id}>
+                {showDateDivider && (
+                  <div className="flex justify-center my-4">
+                    <span className="bg-slate-200/80 backdrop-blur text-slate-600 text-[11px] px-3 py-1 rounded-full shadow-sm">
+                      {msgDate.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+                <motion.div
+                  id={`message-${msg.id}`}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className={cn(
@@ -600,7 +658,23 @@ export default function ChatPage() {
                         {chat.messages.find(m => m.id === msg.replyTo)?.text || 'Mensaje original'}
                       </div>
                     )}
-                    <img src={msg.mediaUrl} alt="Enviada" className="rounded-lg max-w-full h-auto max-h-[300px] object-contain" />
+                    {msg.text && msg.text.startsWith('[GENERATE_IMAGE:') ? (
+                       <div className="bg-muted p-4 rounded-lg flex flex-col items-center justify-center gap-2 border">
+                         <ImageIcon className="h-8 w-8 text-muted-foreground animate-pulse" />
+                         <p className="text-xs text-muted-foreground text-center">Generando imagen...</p>
+                         <p className="text-[10px] text-muted-foreground opacity-50 italic">"{msg.text.substring(16, msg.text.length - 1)}"</p>
+                       </div>
+                    ) : (
+                      <img 
+                        src={msg.mediaUrl} 
+                        alt="Enviada" 
+                        className="rounded-lg max-w-full h-auto max-h-[300px] object-contain cursor-pointer active:opacity-80" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFullscreenImage(msg.mediaUrl || null);
+                        }}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -631,6 +705,7 @@ export default function ChatPage() {
                   )}
                 </div>
               </motion.div>
+              </React.Fragment>
             );
           })}
           <div ref={messagesEndRef} />
@@ -695,9 +770,14 @@ export default function ChatPage() {
               <Share2 className="h-4 w-4 mr-2" /> Reenviar
             </Button>
             {chat.messages.find(m => m.id === selectedMessage)?.senderId === currentUser?.id && (
-              <Button size="sm" variant="destructive" className="w-full justify-start text-sm" onClick={() => { deleteMessage(chat.id, selectedMessage); setSelectedMessage(null); }}>
-                <RotateCcw className="h-4 w-4 mr-2" /> Eliminar
-              </Button>
+              <>
+                <Button size="sm" variant="outline" className="w-full justify-start text-sm mt-2 text-orange-600 border-orange-200 hover:bg-orange-50" onClick={() => { deleteMessage(chat.id, selectedMessage); setSelectedMessage(null); }}>
+                  <RotateCcw className="h-4 w-4 mr-2" /> Eliminar para mi
+                </Button>
+                <Button size="sm" variant="destructive" className="w-full justify-start text-sm" onClick={() => { deleteMessage(chat.id, selectedMessage, true); setSelectedMessage(null); }}>
+                  <Trash2 className="h-4 w-4 mr-2" /> Eliminar para todos
+                </Button>
+              </>
             )}
           </div>
         </motion.div>
