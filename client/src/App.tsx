@@ -22,8 +22,6 @@ function Router() {
     }
 
     // Call state handling - simulate incoming call regardless of route 
-    // (Actual call listening is currently inside Chat component, moving it to App or a layout 
-    // would be complex for a prototype, so we'll listen for any call targeting current user)
     let unsubscribeCall = () => {};
     if (currentUser) {
        import("firebase/database").then(({ ref, onValue }) => {
@@ -41,6 +39,10 @@ function Router() {
           });
        });
     }
+
+    return () => {
+      unsubscribeCall();
+    };
 
     // Handling direct links for logged in users
     if (currentUser) {
