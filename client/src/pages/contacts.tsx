@@ -4,8 +4,8 @@ import { useStore } from "@/lib/store";
 import { MobileLayout } from "@/components/mobile-layout";
 import { OfflineBanner } from "@/components/offline-banner";
 import { Button } from "@/components/ui/button";
-import { Users, UserPlus, Settings, MessageSquare, ShieldAlert } from "lucide-react";
-import { UserSettingsModal, GroupMenuModal, AddFriendModal, ReportsModal } from "@/components/modals";
+import { Users, UserPlus, Settings, MessageSquare, ShieldAlert, PhoneMissed, PhoneForwarded, PhoneIncoming, Phone } from "lucide-react";
+import { UserSettingsModal, GroupMenuModal, AddFriendModal, ReportsModal, CallHistoryModal } from "@/components/modals";
 import { motion } from "framer-motion";
 
 export default function ContactsPage() {
@@ -16,6 +16,7 @@ export default function ContactsPage() {
   const [showGroups, setShowGroups] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showReports, setShowReports] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
 
   // Redirect if not logged in
   React.useEffect(() => {
@@ -47,6 +48,12 @@ export default function ContactsPage() {
               <ShieldAlert className="h-5 w-5" />
             </Button>
           )}
+          <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10 relative" onClick={() => setShowCallHistory(true)}>
+            <Phone className="h-5 w-5" />
+            <div className="absolute top-1 right-1 w-2 h-2 bg-primary text-primary-foreground text-[8px] font-bold rounded-full flex items-center justify-center">
+               <span className="sr-only">Llamadas</span>
+            </div>
+          </Button>
           <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10" onClick={() => setShowGroups(true)}>
             <Users className="h-5 w-5" />
           </Button>
@@ -123,6 +130,7 @@ export default function ContactsPage() {
       <GroupMenuModal open={showGroups} onOpenChange={setShowGroups} />
       <AddFriendModal open={showAdd} onOpenChange={setShowAdd} />
       <ReportsModal open={showReports} onOpenChange={setShowReports} />
+      <CallHistoryModal open={showCallHistory} onOpenChange={setShowCallHistory} />
     </MobileLayout>
   );
 }

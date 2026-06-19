@@ -21,11 +21,24 @@ export interface Message {
   senderId: string;
   text: string;
   timestamp: number;
-  type: 'text' | 'image' | 'audio';
+  type: 'text' | 'image' | 'audio' | 'system';
   mediaUrl?: string;
   read?: boolean;
   status: 'sent' | 'delivered' | 'read';
   replyTo?: string;
+  isDeletedForMe?: boolean;
+  isDeletedForEveryone?: boolean;
+}
+
+export interface CallRecord {
+  id: string;
+  peerId: string;
+  peerName: string;
+  peerAvatar: string;
+  status: 'missed' | 'rejected' | 'answered';
+  direction: 'incoming' | 'outgoing';
+  timestamp: number;
+  duration?: number;
 }
 
 export interface Chat {
@@ -63,7 +76,7 @@ interface StoreContextType {
   createGroup: (name: string) => void;
   joinGroup: (groupId: string) => void;
   addContact: (contactId: string, contactName: string) => boolean;
-  sendMessage: (chatId: string, text: string, type?: 'text' | 'image' | 'audio', mediaUrl?: string, replyTo?: string) => void;
+  sendMessage: (chatId: string, text: string, type?: 'text' | 'image' | 'audio' | 'system', mediaUrl?: string, replyTo?: string) => void;
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
   updateGroup: (groupId: string, updates: Partial<Chat>) => void;
@@ -74,7 +87,7 @@ interface StoreContextType {
   getAllUsers: () => Map<string, User>;
   forgetChat: (chatId: string) => void;
   clearChatMessages: (chatId: string) => void;
-  deleteMessage: (chatId: string, messageId: string) => void;
+  deleteMessage: (chatId: string, messageId: string, deleteForEveryone?: boolean) => void;
   deleteReport: (reportId: string) => void;
   markChatAsRead: (chatId: string) => void;
   replyToMessage: (chatId: string, messageId: string, replyText: string) => void;
@@ -650,7 +663,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' = 'text', mediaUrl?: string, replyTo?: string) => {
+  const sendMessage = (chatId: string, text: string, type: 'text' | 'image' | 'audio' | 'system' = 'text', mediaUrl?: string, replyTo?: string) => {
     if (!currentUser) return;
     
     // Censor bad words and drugs
@@ -902,22 +915,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const deleteMessage = (chatId: string, messageId: string) => {
+  const deleteMessage = (chatId: string, messageId: string, deleteForEveryone: boolean = false) => {
     if (!currentUser) return;
     
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
         const messageToDelete = c.messages.find(m => m.id === messageId);
-        // Only allow deleting own messages
         if (messageToDelete && messageToDelete.senderId === currentUser.id) {
-          const newMessages = c.messages.filter(m => m.id !== messageId);
+          const newMessages = c.messages.map(m => {
+            if (m.id === messageId) {
+              if (deleteForEveryone) {
+                return { ...m, isDeletedForEveryone: true, text: "Mensaje eliminado", type: 'system' as const, mediaUrl: undefined };
+              } else {
+                return { ...m, isDeletedForMe: true };
+              }
+            }
+            return m;
+          });
+          
           return { 
             ...c, 
             messages: newMessages,
-            lastMessage: newMessages.length > 0 ? 
-              (newMessages[newMessages.length - 1].type === 'text' ? newMessages[newMessages.length - 1].text : 'Archivo multimedia') 
-              : undefined,
-            lastMessageTime: newMessages.length > 0 ? newMessages[newMessages.length - 1].timestamp : undefined
           };
         }
       }

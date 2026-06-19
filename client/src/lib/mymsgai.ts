@@ -10,6 +10,17 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
     return "Lo siento, soy una IA y no puedo responderte eso por políticas de seguridad.";
   }
 
+  // Command for image generation
+  if (message.trim().toLowerCase().startsWith('/image')) {
+    const prompt = message.substring(6).trim();
+    if (!prompt) {
+      return "No tengo la información suficiente. Usa /image seguido de una descripción, por ejemplo: /image un perro volando";
+    }
+    // Return a special marker string that the chat component will recognize to display a mock generated image or trigger an image generation process.
+    // Since we are frontend only, we will just simulate an image generation response here.
+    return `[GENERATE_IMAGE:${prompt}]`;
+  }
+
   // Handle mathematical equations directly
   const isMathEquation = /^[0-9\+\-\*\/\(\)\.\s]+$/.test(message.trim());
   if (isMathEquation && message.trim().length > 2) {
