@@ -692,7 +692,17 @@ export default function ChatPage() {
                          <p className="text-xs text-muted-foreground text-center">Generando imagen...</p>
                          <p className="text-[10px] text-muted-foreground opacity-50 italic">"{msg.text.substring(16, msg.text.length - 1)}"</p>
                        </div>
-                    ) : (
+                    ) : msg.text && msg.text.startsWith('[IMAGE_URL:') ? (
+                      <img 
+                        src={msg.text.replace('[IMAGE_URL:', '').replace(']', '')} 
+                        alt="Imagen generada" 
+                        className="rounded-lg max-w-full h-auto max-h-[300px] object-contain cursor-pointer active:opacity-80" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFullscreenImage(msg.text.replace('[IMAGE_URL:', '').replace(']', ''));
+                        }}
+                      />
+                    ) : msg.type === 'image' && msg.mediaUrl ? (
                       <img 
                         src={msg.mediaUrl} 
                         alt="Enviada" 
@@ -702,6 +712,8 @@ export default function ChatPage() {
                           setFullscreenImage(msg.mediaUrl || null);
                         }}
                       />
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words">{msg.text}</p>
                     )}
                   </div>
                 )}
