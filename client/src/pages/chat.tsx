@@ -769,7 +769,7 @@ export default function ChatPage() {
             }}>
               <Share2 className="h-4 w-4 mr-2" /> Reenviar
             </Button>
-            {chat.messages.find(m => m.id === selectedMessage)?.senderId === currentUser?.id && (
+            {chat.messages.find(m => m.id === selectedMessage)?.senderId === currentUser?.id ? (
               <>
                 <Button size="sm" variant="outline" className="w-full justify-start text-sm mt-2 text-orange-600 border-orange-200 hover:bg-orange-50" onClick={() => { deleteMessage(chat.id, selectedMessage); setSelectedMessage(null); }}>
                   <RotateCcw className="h-4 w-4 mr-2" /> Eliminar para mi
@@ -778,6 +778,10 @@ export default function ChatPage() {
                   <Trash2 className="h-4 w-4 mr-2" /> Eliminar para todos
                 </Button>
               </>
+            ) : (
+              <Button size="sm" variant="outline" className="w-full justify-start text-sm mt-2 text-orange-600 border-orange-200 hover:bg-orange-50" onClick={() => { deleteMessage(chat.id, selectedMessage); setSelectedMessage(null); }}>
+                <RotateCcw className="h-4 w-4 mr-2" /> Eliminar para mi
+              </Button>
             )}
           </div>
         </motion.div>
