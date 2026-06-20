@@ -790,18 +790,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             try {
               const { getMymsgAIResponse } = await import('./mymsgai');
               const response = await getMymsgAIResponse(text);
+              const isImage = response.startsWith('[IMAGE_URL:');
+              
               const aiMessage: Message = {
                 id: nanoid(),
                 senderId: 'mymsgai',
-                text: response,
+                text: isImage ? '' : response,
+                mediaUrl: isImage ? response.replace('[IMAGE_URL:', '').replace(']', '') : undefined,
                 timestamp: Date.now(),
-                type: 'text',
+                type: isImage ? 'image' : 'text',
                 status: 'read',
                 read: true
               };
               setChats(prev => prev.map(ch => 
                 ch.id === chatId 
-                  ? { ...ch, messages: [...ch.messages, aiMessage], lastMessage: response, lastMessageTime: Date.now() }
+                  ? { ...ch, messages: [...ch.messages, aiMessage], lastMessage: isImage ? 'Envió una imagen' : response, lastMessageTime: Date.now() }
                   : ch
               ));
             } catch (e) {

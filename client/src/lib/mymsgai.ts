@@ -1,8 +1,4 @@
-// MymsgAI - Intelligent chatbot powered by Google Gemini
 import { containsBannedWord } from "./censor";
-
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 export async function getMymsgAIResponse(message: string): Promise<string> {
   // Check if message contains inappropriate content
@@ -16,33 +12,33 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
     if (!prompt) {
       return "No tengo la información suficiente. Usa /image seguido de una descripción, por ejemplo: /image un perro volando";
     }
-    // Return a special marker string that the chat component will recognize to display a mock generated image or trigger an image generation process.
-    // Since we are frontend only, we will just simulate an image generation response here.
-    return `[GENERATE_IMAGE:${prompt}]`;
+    // Return a special marker string to generate an image
+    return `[IMAGE_URL:https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=800&nologo=true]`;
   }
 
   // Handle mathematical equations directly
   const isMathEquation = /^[0-9\+\-\*\/\(\)\.\s]+$/.test(message.trim());
   if (isMathEquation && message.trim().length > 2) {
     try {
-      // Usar Function en lugar de eval por seguridad, aunque eval funciona para mates simples
       const result = new Function(`return ${message.trim()}`)();
       return `El resultado de ${message.trim()} es: ${result}`;
-    } catch (e) {
-      // Si falla, pasarlo a Gemini
-    }
+    } catch (e) {}
   }
 
-  // Handle "resuelve" or "calcula" text + math
   const mathMatch = message.match(/(?:resuelve|calcula|cuanto es|cuánto es)\s+([0-9\+\-\*\/\(\)\.\s]+)/i);
   if (mathMatch && mathMatch[1].trim().length > 2) {
     try {
       const result = new Function(`return ${mathMatch[1].trim()}`)();
       return `El resultado es: ${result}`;
-    } catch (e) {
-      // Si falla, pasarlo a Gemini
-    }
+    } catch (e) {}
   }
+
+  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+  if (!GEMINI_API_KEY) {
+    return "¡Hola! Para que mi cerebro (Gemini) funcione en Vercel, necesitas agregar la variable de entorno 'VITE_GEMINI_API_KEY' en la configuración de tu proyecto en Vercel, y luego volver a hacer un 'Deploy'. Sin esa llave no puedo conectarme a internet para responderte. 😅";
+  }
+
+  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
     const response = await fetch(API_URL, {
