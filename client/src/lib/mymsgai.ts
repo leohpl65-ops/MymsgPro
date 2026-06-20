@@ -67,7 +67,11 @@ El usuario te dice: "${message}"`
     });
 
     if (!response.ok) {
-      console.error("Gemini API error:", await response.text());
+      const errorText = await response.text();
+      console.error("Gemini API error:", errorText);
+      if (errorText.includes("API key not valid") || response.status === 400 || response.status === 403) {
+        return "Parece que la clave de API (VITE_GEMINI_API_KEY) no es válida o ha expirado. Por favor, verifica que sea una clave correcta de Google AI Studio (normalmente empieza con 'AIza...').";
+      }
       return "Lo siento, estoy teniendo problemas de conexión en este momento. ¿Podrías intentar más tarde?";
     }
 
