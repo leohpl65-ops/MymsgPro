@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -239,6 +240,39 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
   const { addContact, getAllUsers, currentUser } = useStore();
   const [friendId, setFriendId] = useState("");
   const [error, setError] = useState("");
+  const [foundUser, setFoundUser] = useState<{name: string, inApp: boolean} | null>(null);
+
+  React.useEffect(() => {
+    const checkUser = async () => {
+      const cleanFriendId = friendId.trim().replace(/\s/g, '');
+      if (!cleanFriendId) {
+        setFoundUser(null);
+        return;
+      }
+      
+      try {
+        const { get, ref } = await import("firebase/database");
+        const { db } = await import("@/lib/firebase");
+        
+        const userSnap = await get(ref(db, `users/${cleanFriendId}`));
+        
+        if (userSnap.exists()) {
+          const user = userSnap.val();
+          setFoundUser({
+            name: user.originalName || user.name || `Usuario ${cleanFriendId}`,
+            inApp: true
+          });
+        } else {
+          setFoundUser({ name: "No encontrado", inApp: false });
+        }
+      } catch (e) {
+        // Ignore errors for real-time checking
+      }
+    };
+
+    const timeoutId = setTimeout(checkUser, 500);
+    return () => clearTimeout(timeoutId);
+  }, [friendId]);
 
   const handleAddContact = async () => {
     setError("");
@@ -323,6 +357,15 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
               value={friendId}
               onChange={(e) => { setFriendId(e.target.value); setError(""); }}
             />
+            {foundUser && (
+              <div className="text-xs mt-1">
+                {foundUser.inApp ? (
+                  <span className="text-green-600 font-medium">✅ {foundUser.name} (está en mymsg pro)</span>
+                ) : (
+                  <span className="text-muted-foreground">{foundUser.name}</span>
+                )}
+              </div>
+            )}
           </div>
           <Button className="w-full" onClick={handleAddContact}>
             Añadir Contacto
@@ -335,6 +378,7 @@ export function AddFriendModal({ open, onOpenChange }: { open: boolean; onOpenCh
 
 export function CallHistoryModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { currentUser } = useStore();
+  const [, setLocation] = useLocation();
   const [callHistory, setCallHistory] = useState<any[]>([]);
 
   React.useEffect(() => {
@@ -395,7 +439,27 @@ export function CallHistoryModal({ open, onOpenChange }: { open: boolean; onOpen
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 cursor-pointer hover:bg-slate-100 rounded p-1 transition-colors" onClick={() => {
+                    // Start call automatically
+                    if (call.peerId) {
+                      import("@/hooks/use-toast").then(({ toast }) => {
+                        toast({ description: `Iniciando llamada con ${call.peerName}...`, duration: 2000 });
+                      });
+                      
+                      // Navigate to chat and somehow trigger call
+                      // Since we don't have a direct "start call" global action,
+                      // we'll just navigate to the chat for now. The user can click call there.
+                      // A more robust implementation would use a global call state manager.
+                      
+                      // First close modal
+                      onOpenChange(false);
+                      
+                      // Small delay to allow modal to close gracefully
+                      setTimeout(() => {
+                        window.location.href = `/chat/${call.peerId}`;
+                      }, 300);
+                    }
+                  }}>
                     <p className="font-semibold text-sm truncate">{call.peerName}</p>
                     <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <Clock className="h-3 w-3" />

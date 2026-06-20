@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useLocation } from "wouter";
 import { nanoid } from "nanoid";
 import { censorMessage } from "./censor";
 import { ref, onValue, set, get, child, update, push, remove } from "firebase/database";
@@ -97,6 +98,7 @@ interface StoreContextType {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const [location, setLocation] = useLocation();
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem("mymsg_user");
     return saved ? JSON.parse(saved) : null;
@@ -921,7 +923,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setChats(prev => prev.map(c => {
       if (c.id === chatId) {
         const messageToDelete = c.messages.find(m => m.id === messageId);
-        if (messageToDelete && messageToDelete.senderId === currentUser.id) {
+        if (messageToDelete) {
+          // If deleting for everyone, MUST be my message
+          if (deleteForEveryone && messageToDelete.senderId !== currentUser.id) {
+            return c;
+          }
+          
           const newMessages = c.messages.map(m => {
             if (m.id === messageId) {
               if (deleteForEveryone) {
