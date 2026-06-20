@@ -198,6 +198,13 @@ export default function ChatPage() {
     const recipientId = chat.participants.find(p => p !== currentUser.id);
     if (!recipientId) return;
 
+    // Auto-reply for AI
+    if (chat.id === 'dm-mymsgai' || chat.participants.includes('mymsgai')) {
+      const { toast } = await import("@/hooks/use-toast");
+      toast({ description: "MymsgAI no puede recibir llamadas de voz", variant: "destructive", duration: 3000 });
+      return;
+    }
+
     setIsCalling(true);
     setIsReceivingCall(false);
     setShowCallScreen(true);
@@ -304,6 +311,27 @@ export default function ChatPage() {
       });
     });
   };
+
+  // Listen for the custom event to start call from history
+  useEffect(() => {
+    // Only set up the listener if chat is available
+    if (!chat || !currentUser) return;
+
+    const handleStartCall = (e: CustomEvent) => {
+      if (e.detail && e.detail.peerId) {
+        // Ensure we are in the correct chat before initiating
+        const recipientId = chat?.participants.find(p => p !== currentUser?.id);
+        if (recipientId === e.detail.peerId) {
+          initiateCall();
+        }
+      }
+    };
+    
+    window.addEventListener('mymsg-start-call', handleStartCall as EventListener);
+    return () => {
+      window.removeEventListener('mymsg-start-call', handleStartCall as EventListener);
+    };
+  }, [chat?.id, currentUser?.id]);
 
   const endCall = (peerId?: string) => {
     const target = peerId || callPeer?.id;

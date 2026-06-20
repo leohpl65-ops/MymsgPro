@@ -442,22 +442,13 @@ export function CallHistoryModal({ open, onOpenChange }: { open: boolean; onOpen
                   <div className="flex-1 min-w-0 cursor-pointer hover:bg-slate-100 rounded p-1 transition-colors" onClick={() => {
                     // Start call automatically
                     if (call.peerId) {
-                      import("@/hooks/use-toast").then(({ toast }) => {
-                        toast({ description: `Iniciando llamada con ${call.peerName}...`, duration: 2000 });
-                      });
-                      
-                      // Navigate to chat and somehow trigger call
-                      // Since we don't have a direct "start call" global action,
-                      // we'll just navigate to the chat for now. The user can click call there.
-                      // A more robust implementation would use a global call state manager.
-                      
-                      // First close modal
-                      onOpenChange(false);
-                      
-                      // Small delay to allow modal to close gracefully
+                      // Navigate to chat
+                      setLocation(`/chat/${call.peerId}`);
+                      // Trigger a custom event that chat.tsx can listen to for starting a call
                       setTimeout(() => {
-                        window.location.href = `/chat/${call.peerId}`;
-                      }, 300);
+                        window.dispatchEvent(new CustomEvent('mymsg-start-call', { detail: { peerId: call.peerId }}));
+                      }, 500);
+                      onOpenChange(false);
                     }
                   }}>
                     <p className="font-semibold text-sm truncate">{call.peerName}</p>
