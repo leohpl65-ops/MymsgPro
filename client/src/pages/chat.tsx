@@ -1048,6 +1048,40 @@ export default function ChatPage() {
       {/* Pantalla de Llamada */}
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <AnimatePresence>
+
+      {/* AI Commands Dialog */}
+      <Dialog open={showAiCommands} onOpenChange={setShowAiCommands}>
+        <DialogContent className="sm:max-w-xs" aria-describedby="ai-commands-dialog">
+          <DialogHeader>
+            <DialogTitle>Comandos de MymsgAI</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm">Generación de Imágenes</h3>
+              <p className="text-xs text-muted-foreground">Usa este comando para generar imágenes con IA.</p>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('/image '); setShowAiCommands(false); inputRef.current?.focus(); }}>
+                /image [descripción de la imagen]
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm">Operaciones Matemáticas</h3>
+              <p className="text-xs text-muted-foreground">Escribe ecuaciones matemáticas directamente o pide a la IA que las resuelva.</p>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('20 + 30'); setShowAiCommands(false); inputRef.current?.focus(); }}>
+                Ejemplo: 20 + 30
+              </div>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('resuelve 5 * (10 - 2)'); setShowAiCommands(false); inputRef.current?.focus(); }}>
+                Ejemplo: resuelve 5 * (10 - 2)
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm">Conversación Normal</h3>
+              <p className="text-xs text-muted-foreground">Puedes hacer preguntas, pedir consejos o charlar normalmente. La IA usa el modelo ChatGPT-4o-mini para responderte.</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
         {showCallScreen && (
           <motion.div 
             initial={{ opacity: 0, y: "100%" }}
