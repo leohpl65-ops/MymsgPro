@@ -33,57 +33,57 @@ export async function getMymsgAIResponse(message: string): Promise<string> {
     } catch (e) {}
   }
 
-  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-  if (!GEMINI_API_KEY) {
-    return "¡Hola! Para que mi cerebro (Gemini) funcione en Vercel, necesitas agregar la variable de entorno 'VITE_GEMINI_API_KEY' en la configuración de tu proyecto en Vercel, y luego volver a hacer un 'Deploy'. Sin esa llave no puedo conectarme a internet para responderte. 😅";
+  const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || "";
+  if (!OPENAI_API_KEY) {
+    return "¡Hola! Para que mi cerebro (ChatGPT) funcione, necesitas agregar la variable de entorno 'VITE_OPENAI_API_KEY' en la configuración de tu proyecto.";
   }
 
-  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const API_URL = "https://api.openai.com/v1/chat/completions";
 
   try {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        contents: [
+        model: "gpt-4o-mini", // O puedes usar gpt-3.5-turbo si prefieres
+        messages: [
+          {
+            role: "system",
+            content: "Eres MymsgAI, un asistente virtual inteligente integrado en la aplicación de chat MyMsg Pro. Responde de manera amigable, concisa y muy útil en español. Actúa como una persona o asistente experto."
+          },
           {
             role: "user",
-            parts: [
-              {
-                text: `Eres MymsgAI, un asistente virtual inteligente integrado en la aplicación de chat MyMsg Pro. 
-Responde de manera amigable, concisa y muy útil en español. Actúa como una persona o asistente experto.
-El usuario te dice: "${message}"`
-              }
-            ]
+            content: message
           }
         ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 800,
-        }
+        temperature: 0.7,
+        max_tokens: 800,
       })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Gemini API error:", errorText);
-      if (errorText.includes("API key not valid") || response.status === 400 || response.status === 403) {
-        return "Parece que la clave de API (VITE_GEMINI_API_KEY) no es válida o ha expirado. Por favor, verifica que sea una clave correcta de Google AI Studio (normalmente empieza con 'AIza...').";
+      console.error("OpenAI API error:", errorText);
+      if (response.status === 401 || response.status === 403) {
+        return "Parece que la clave de API (VITE_OPENAI_API_KEY) no es válida o ha expirado. Por favor verifica tu clave en OpenAI.";
+      } else if (response.status === 429) {
+        return "Al parecer te has quedado sin saldo o créditos en tu cuenta de OpenAI. Revisa la facturación.";
       }
       return "Lo siento, estoy teniendo problemas de conexión en este momento. ¿Podrías intentar más tarde?";
     }
 
     const data = await response.json();
     
-    if (data.candidates && data.candidates.length > 0 && data.candidates[0].content.parts.length > 0) {
-      return data.candidates[0].content.parts[0].text.trim();
+    if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+      return data.choices[0].message.content.trim();
     } else {
       return "No pude procesar una respuesta adecuada. ¿Podrías reformular tu pregunta?";
     }
   } catch (error) {
-    console.error("Error calling Gemini:", error);
+    console.error("Error calling OpenAI:", error);
     return "Ocurrió un error al intentar conectarme a mi cerebro. Por favor, inténtalo de nuevo.";
   }
 }
