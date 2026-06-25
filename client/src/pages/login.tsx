@@ -241,7 +241,8 @@ export default function LoginPage() {
     const templateParams = {
       email: foundUser.googleLinked,
       passcode: code,
-      time: new Date(Date.now() + 15*60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+      time: new Date(Date.now() + 15*60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+      app_url: window.location.origin
     };
 
     emailjs.send(

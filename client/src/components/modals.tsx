@@ -19,6 +19,12 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
   const [newPwd, setNewPwd] = useState("");
   const [pwdError, setPwdError] = useState("");
 
+  const [pwdMode, setPwdMode] = useState<'current' | 'email'>('current');
+  const [sentCode, setSentCode] = useState("");
+  const [enteredCode, setEnteredCode] = useState("");
+  const [isEmailSending, setIsEmailSending] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
+
   const [showGoogleDialog, setShowGoogleDialog] = useState(false);
   const [googleEmail, setGoogleEmail] = useState("");
 
@@ -148,40 +154,130 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
               </DialogHeader>
               <div className="space-y-4 py-4">
                 {pwdError && <div className="text-red-500 text-xs">{pwdError}</div>}
-                <div className="space-y-2">
-                  <Label>Contraseña actual</Label>
-                  <Input 
-                    type="password" 
-                    value={currentPwd} 
-                    onChange={(e) => setCurrentPwd(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Nueva contraseña</Label>
-                  <Input 
-                    type="password" 
-                    value={newPwd} 
-                    onChange={(e) => setNewPwd(e.target.value)}
-                  />
-                </div>
-                <Button className="w-full" onClick={() => {
-                  if (currentPwd !== currentUser?.password) {
-                    setPwdError("La contraseña actual es incorrecta");
-                    return;
-                  }
-                  if (!newPwd.trim()) {
-                    setPwdError("Ingresa una nueva contraseña");
-                    return;
-                  }
-                  updateUser({ password: newPwd.trim() });
-                  setShowPasswordDialog(false);
-                  setCurrentPwd("");
-                  setNewPwd("");
-                  setPwdError("");
-                  import("@/hooks/use-toast").then(({ toast }) => {
-                    toast({ description: "Contraseña cambiada exitosamente", duration: 3000 });
-                  });
-                }}>Cambiar</Button>
+                
+                {!codeVerified && (
+                  <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                    <Button 
+                      variant={pwdMode === 'current' ? 'default' : 'ghost'} 
+                      className="flex-1 h-8 text-xs" 
+                      onClick={() => setPwdMode('current')}
+                    >
+                      Con actual
+                    </Button>
+                    <Button 
+                      variant={pwdMode === 'email' ? 'default' : 'ghost'} 
+                      className="flex-1 h-8 text-xs" 
+                      onClick={() => setPwdMode('email')}
+                      disabled={!currentUser?.googleLinked}
+                    >
+                      Con correo
+                    </Button>
+                  </div>
+                )}
+
+                {!currentUser?.googleLinked && pwdMode === 'email' && (
+                  <p className="text-xs text-red-500">Debes vincular una cuenta de Google primero.</p>
+                )}
+
+                {pwdMode === 'current' && !codeVerified && (
+                  <div className="space-y-2">
+                    <Label>Contraseña actual</Label>
+                    <Input 
+                      type="password" 
+                      value={currentPwd} 
+                      onChange={(e) => setCurrentPwd(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {pwdMode === 'email' && !codeVerified && currentUser?.googleLinked && (
+                  <div className="space-y-2">
+                    {!sentCode ? (
+                      <Button 
+                        className="w-full" 
+                        disabled={isEmailSending}
+                        onClick={() => {
+                          setIsEmailSending(true);
+                          const code = Math.floor(100000 + Math.random() * 900000).toString();
+                          setSentCode(code);
+                          
+                          import("@emailjs/browser").then((emailjs) => {
+                            const templateParams = {
+                              email: currentUser.googleLinked,
+                              passcode: code,
+                              time: new Date(Date.now() + 15*60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                              app_url: window.location.origin
+                            };
+                            emailjs.default.send("service_ff94kiq", "template_9yuhjns", templateParams, "0o7HK3NHxh9Nn_PPk")
+                              .then(() => {
+                                setIsEmailSending(false);
+                                import("@/hooks/use-toast").then(({ toast }) => {
+                                  toast({ description: "Código enviado a tu correo" });
+                                });
+                              })
+                              .catch(() => {
+                                setIsEmailSending(false);
+                                setPwdError("Error al enviar el correo");
+                              });
+                          });
+                        }}
+                      >
+                        {isEmailSending ? "Enviando..." : "Enviar código al correo"}
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label>Código enviado a tu correo</Label>
+                        <Input 
+                          placeholder="123456" 
+                          value={enteredCode} 
+                          onChange={(e) => setEnteredCode(e.target.value)}
+                        />
+                        <Button className="w-full" onClick={() => {
+                          if (enteredCode === sentCode) {
+                            setCodeVerified(true);
+                            setPwdError("");
+                          } else {
+                            setPwdError("Código incorrecto");
+                          }
+                        }}>Verificar</Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(pwdMode === 'current' || codeVerified) && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Nueva contraseña</Label>
+                      <Input 
+                        type="password" 
+                        value={newPwd} 
+                        onChange={(e) => setNewPwd(e.target.value)}
+                      />
+                    </div>
+                    <Button className="w-full" onClick={() => {
+                      if (pwdMode === 'current' && currentPwd !== currentUser?.password) {
+                        setPwdError("La contraseña actual es incorrecta");
+                        return;
+                      }
+                      if (!newPwd.trim()) {
+                        setPwdError("Ingresa una nueva contraseña");
+                        return;
+                      }
+                      updateUser({ password: newPwd.trim() });
+                      setShowPasswordDialog(false);
+                      setCurrentPwd("");
+                      setNewPwd("");
+                      setPwdError("");
+                      setSentCode("");
+                      setEnteredCode("");
+                      setCodeVerified(false);
+                      import("@/hooks/use-toast").then(({ toast }) => {
+                        toast({ description: "Contraseña cambiada exitosamente", duration: 3000 });
+                      });
+                    }}>Guardar Nueva Contraseña</Button>
+                  </>
+                )}
               </div>
             </DialogContent>
           </Dialog>
