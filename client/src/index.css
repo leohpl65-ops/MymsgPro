@@ -55,7 +55,21 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Disable text selection on mobile/touch devices */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
   }
+  
+  /* Allow text selection in inputs and textareas */
+  input, textarea {
+    -webkit-user-select: auto;
+    -moz-user-select: auto;
+    -ms-user-select: auto;
+    user-select: auto;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased overflow-hidden;
   }

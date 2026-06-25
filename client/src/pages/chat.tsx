@@ -534,9 +534,28 @@ export default function ChatPage() {
                   const friendStr = localStorage.getItem(`mymsg_user_${friendId}`);
                   if (friendStr) {
                     const friendUser = JSON.parse(friendStr);
-                    if (friendUser.status === 'online') {
-                      return <span className="text-green-500">En línea</span>;
-                    }
+                    return (
+                      <span className="flex items-center gap-1">
+                        {friendUser.status === 'online' ? (
+                          <span className="text-green-500">En línea</span>
+                        ) : (
+                          <span className="text-gray-400">Desconectado</span>
+                        )}
+                        {friendUser.youtubeUrl && (
+                          <a 
+                            href={friendUser.youtubeUrl.startsWith('http') ? friendUser.youtubeUrl : `https://youtube.com/${friendUser.youtubeUrl}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-red-600 hover:opacity-80 transition inline-flex"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                            </svg>
+                          </a>
+                        )}
+                      </span>
+                    );
                   }
                 } catch(e) {}
                 
@@ -1122,7 +1141,7 @@ export default function ChatPage() {
             <div className="space-y-2">
               <h3 className="font-semibold text-sm">Generación de Imágenes</h3>
               <p className="text-xs text-muted-foreground">Usa este comando para generar imágenes con IA.</p>
-              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('/image '); setShowAiCommands(false); inputRef.current?.focus(); }}>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setInputText('/image '); setShowAiCommands(false); }}>
                 /image [descripción de la imagen]
               </div>
             </div>
@@ -1130,10 +1149,10 @@ export default function ChatPage() {
             <div className="space-y-2">
               <h3 className="font-semibold text-sm">Operaciones Matemáticas</h3>
               <p className="text-xs text-muted-foreground">Escribe ecuaciones matemáticas directamente o pide a la IA que las resuelva.</p>
-              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('20 + 30'); setShowAiCommands(false); inputRef.current?.focus(); }}>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setInputText('20 + 30'); setShowAiCommands(false); }}>
                 Ejemplo: 20 + 30
               </div>
-              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setNewMessage('resuelve 5 * (10 - 2)'); setShowAiCommands(false); inputRef.current?.focus(); }}>
+              <div className="bg-muted p-2 rounded-md text-xs font-mono cursor-pointer hover:bg-muted/80" onClick={() => { setInputText('resuelve 5 * (10 - 2)'); setShowAiCommands(false); }}>
                 Ejemplo: resuelve 5 * (10 - 2)
               </div>
             </div>
