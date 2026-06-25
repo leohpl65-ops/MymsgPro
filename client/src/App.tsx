@@ -50,7 +50,7 @@ function Router() {
       if (location.startsWith("/chat/dm-")) {
         const parts = location.split("/chat/dm-")[1]?.split("-");
         if (parts && parts.length >= 2) {
-          const targetId = parts[0] === currentUser.id ? parts[1] : parts[0];
+          const targetId = parts[0] === currentUser?.id ? parts[1] : parts[0];
           // We don't auto-add here anymore, we let the chat open and only add if they send a message.
         }
       }
