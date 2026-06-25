@@ -563,6 +563,32 @@ export default function ChatPage() {
         </Button>
       </header>
 
+      {/* Fullscreen Image View */}
+      <AnimatePresence>
+        {fullscreenImage && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+          >
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="absolute top-4 right-4 text-white hover:bg-white/20 z-50 bg-black/40 rounded-full"
+              onClick={() => setFullscreenImage(null)}
+            >
+              <X className="h-8 w-8" />
+            </Button>
+            <img 
+              src={fullscreenImage} 
+              alt="Fullscreen" 
+              className="max-w-full max-h-full object-contain" 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Messages Area */}
       <div 
         className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100 relative"
