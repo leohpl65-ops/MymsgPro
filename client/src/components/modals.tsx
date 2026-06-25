@@ -52,7 +52,7 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs" aria-describedby="profile-dialog">
+      <DialogContent className="sm:max-w-xs max-h-[85vh] overflow-y-auto" aria-describedby="profile-dialog">
         <DialogHeader>
           <DialogTitle>Mi Perfil</DialogTitle>
         </DialogHeader>
@@ -85,7 +85,26 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
             <Label className="text-xs text-muted-foreground">Usuario: {currentUser?.originalName || currentUser?.name}</Label>
           </div>
           
-          <Button onClick={handleSave} className="w-full">Guardar</Button>
+          {/* YouTube Link Integration */}
+          <div className="w-full space-y-2 pt-2 border-t mt-2">
+            <Label className="text-xs font-semibold flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-red-600">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
+              Vincular canal de YouTube
+            </Label>
+            <div className="flex gap-2">
+              <Input 
+                placeholder="URL o ID del canal" 
+                value={currentUser?.youtubeUrl || ''} 
+                onChange={(e) => updateUser({ youtubeUrl: e.target.value })} 
+                className="text-xs"
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">Si añades tu canal, otros verán un icono junto a tu nombre.</p>
+          </div>
+
+          <Button onClick={handleSave} className="w-full mt-2">Guardar</Button>
 
           {/* Backup Button */}
           <div className="w-full pt-2">
@@ -146,28 +165,6 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
                 style={{ width: '0%' }}
               />
             </Button>
-            <p className="text-[10px] text-muted-foreground text-center mt-1">
-              {(() => {
-                try {
-                  const backupStr = localStorage.getItem(`mymsg_backup_${currentUser?.id}`);
-                  if (!backupStr) return "Sin copias previas";
-                  
-                  const backup = JSON.parse(backupStr);
-                  const diffHours = (Date.now() - backup.timestamp) / (1000 * 60 * 60);
-                  
-                  if (diffHours < 1) return "hace menos de una hora";
-                  if (diffHours < 24) return `hace ${Math.floor(diffHours)} horas`;
-                  if (diffHours < 48) return "hace 1 día";
-                  if (diffHours < 24 * 7) return `hace ${Math.floor(diffHours / 24)} días`;
-                  if (diffHours < 24 * 14) return "hace 1 semana";
-                  if (diffHours < 24 * 30) return `hace ${Math.floor(diffHours / (24 * 7))} semanas`;
-                  if (diffHours < 24 * 60) return "hace 1 mes";
-                  return `hace ${Math.floor(diffHours / (24 * 30))} meses`;
-                } catch(e) {
-                  return "Sin copias previas";
-                }
-              })()}
-            </p>
           </div>
           
           <Dialog>
