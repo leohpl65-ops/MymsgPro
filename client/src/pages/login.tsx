@@ -9,6 +9,7 @@ import { MessageCircle, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import { ref, get } from "firebase/database";
 import { db } from "@/lib/firebase";
+import emailjs from "@emailjs/browser";
 
 const OWNER_PASSWORD = "12345670";
 const ADMIN_PASSWORD = "13245670";
@@ -232,17 +233,33 @@ export default function LoginPage() {
       return;
     }
     
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 dígitos numéricos
     setSentCode(code);
     setEnteredCode("");
     
-    // Simulated email sending
-    import("@/hooks/use-toast").then(({ toast }) => {
-      toast({ 
-        title: "Correo enviado", 
-        description: `Se ha enviado el código a tu correo vinculado.`, 
-        duration: 5000 
+    // EmailJS actual sending
+    const templateParams = {
+      email: foundUser.googleLinked,
+      passcode: code,
+      time: new Date(Date.now() + 15*60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+    };
+
+    emailjs.send(
+      "service_ff94kiq", // Service ID de tus fotos
+      "TU_TEMPLATE_ID", // TODO: Reemplazar
+      templateParams,
+      "TU_PUBLIC_KEY" // TODO: Reemplazar
+    ).then(() => {
+      import("@/hooks/use-toast").then(({ toast }) => {
+        toast({ 
+          title: "Correo enviado", 
+          description: `Se ha enviado el código a tu correo vinculado.`, 
+          duration: 5000 
+        });
       });
+    }).catch((error) => {
+      console.error("Error sending email:", error);
+      setForgotError("No se pudo enviar el correo, revisa tu conexión o configuración.");
     });
   };
   
