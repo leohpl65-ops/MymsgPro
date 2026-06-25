@@ -1,22 +1,162 @@
 --- client/src/components/modals.tsx
 +++ client/src/components/modals.tsx
-@@ -95,7 +95,7 @@
-               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-red-600">
-                 <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-               </svg>
-               Vincular canal de YouTube
-             </Label>
-             <div className="flex gap-2">
-               <Input 
-                 placeholder="URL o ID del canal" 
-                 value={currentUser?.youtubeUrl || ''} 
-                 onChange={(e) => updateUser({ youtubeUrl: e.target.value })} 
-                 className="text-xs"
-               />
-             </div>
-             <p className="text-[10px] text-muted-foreground">Si añades tu canal, otros verán un icono junto a tu nombre.</p>
+@@ -99,28 +99,111 @@
+             <Label className="text-xs text-muted-foreground">Usuario: {currentUser?.originalName || currentUser?.name}</Label>
            </div>
- 
+           
+-          {/* YouTube Link Integration */}
+-          <div className="w-full space-y-2 pt-2 border-t mt-2">
+-            <Label className="text-xs font-semibold flex items-center gap-1">
+-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-red-600">
+-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+-              </svg>
+-              Vincular canal de YouTube
+-            </Label>
+-            <div className="flex gap-2">
+-              <Input 
+-                placeholder="URL o ID del canal" 
+-                value={currentUser?.youtubeUrl || ''} 
+-                onChange={(e) => updateUser({ youtubeUrl: e.target.value })} 
+-                className="text-xs"
+-              />
+-            </div>
+-            <p className="text-[10px] text-muted-foreground">Si añades tu canal, otros verán un icono junto a tu nombre.</p>
+-          </div>
+-
            <Button onClick={handleSave} className="w-full mt-2">Guardar</Button>
  
++          {!currentUser?.googleLinked && (
++            <Button variant="outline" className="w-full mt-2" onClick={() => setShowGoogleDialog(true)}>
++              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 mr-2 text-blue-500">
++                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
++                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
++                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
++                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
++              </svg>
++              Vincular cuenta de Google
++            </Button>
++          )}
++
++          <Dialog open={showGoogleDialog} onOpenChange={setShowGoogleDialog}>
++            <DialogContent className="sm:max-w-xs">
++              <DialogHeader>
++                <DialogTitle>Vincular a Google</DialogTitle>
++              </DialogHeader>
++              <div className="space-y-4 py-4">
++                <div className="space-y-2">
++                  <Label>Ingresa tu Gmail</Label>
++                  <Input 
++                    type="email" 
++                    value={googleEmail} 
++                    onChange={(e) => setGoogleEmail(e.target.value)}
++                    placeholder="tu@gmail.com"
++                  />
++                </div>
++                <Button className="w-full" onClick={() => {
++                  if (googleEmail.trim()) {
++                    updateUser({ googleLinked: googleEmail.trim() });
++                    setShowGoogleDialog(false);
++                    import("@/hooks/use-toast").then(({ toast }) => {
++                      toast({ description: "Cuenta vinculada correctamente", duration: 3000 });
++                    });
++                  }
++                }}>Vincular</Button>
++              </div>
++            </DialogContent>
++          </Dialog>
++
++          <Button variant="outline" className="w-full mt-2" onClick={() => setShowPasswordDialog(true)}>
++             Cambiar Contraseña
++          </Button>
++
++          <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
++            <DialogContent className="sm:max-w-xs">
++              <DialogHeader>
++                <DialogTitle>Cambiar Contraseña</DialogTitle>
++              </DialogHeader>
++              <div className="space-y-4 py-4">
++                {pwdError && <div className="text-red-500 text-xs">{pwdError}</div>}
++                <div className="space-y-2">
++                  <Label>Contraseña actual</Label>
++                  <Input 
++                    type="password" 
++                    value={currentPwd} 
++                    onChange={(e) => setCurrentPwd(e.target.value)}
++                  />
++                </div>
++                <div className="space-y-2">
++                  <Label>Nueva contraseña</Label>
++                  <Input 
++                    type="password" 
++                    value={newPwd} 
++                    onChange={(e) => setNewPwd(e.target.value)}
++                  />
++                </div>
++                <Button className="w-full" onClick={() => {
++                  if (currentPwd !== currentUser?.password) {
++                    setPwdError("La contraseña actual es incorrecta");
++                    return;
++                  }
++                  if (!newPwd.trim()) {
++                    setPwdError("Ingresa una nueva contraseña");
++                    return;
++                  }
++                  updateUser({ password: newPwd.trim() });
++                  setShowPasswordDialog(false);
++                  setCurrentPwd("");
++                  setNewPwd("");
++                  setPwdError("");
++                  import("@/hooks/use-toast").then(({ toast }) => {
++                    toast({ description: "Contraseña cambiada exitosamente", duration: 3000 });
++                  });
++                }}>Cambiar</Button>
++              </div>
++            </DialogContent>
++          </Dialog>
++
            {/* Backup Button */}
+           <div className="w-full pt-2">
+             <Button 
+@@ -213,6 +296,44 @@
+             </DialogContent>
+           </Dialog>
+           
++          <Dialog open={showExtraOptions} onOpenChange={setShowExtraOptions}>
++            <DialogTrigger asChild>
++              <Button variant="outline" className="w-full">
++                 Opciones extras
++              </Button>
++            </DialogTrigger>
++            <DialogContent className="sm:max-w-xs max-h-[85vh] overflow-y-auto">
++              <div className="flex justify-between items-center mb-4">
++                <DialogTitle>Opciones Extras</DialogTitle>
++                <Button variant="ghost" size="icon" onClick={() => setShowExtraOptions(false)} className="rounded-full h-8 w-8">
++                  <X className="h-4 w-4" />
++                </Button>
++              </div>
++              
++              {/* YouTube Link Integration */}
++              <div className="w-full space-y-2 border-t pt-4">
++                <Label className="text-sm font-semibold flex items-center gap-2">
++                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-red-600">
++                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
++                  </svg>
++                  Vincular canal de YouTube
++                </Label>
++                <div className="flex gap-2">
++                  <Input 
++                    placeholder="URL o ID del canal" 
++                    value={currentUser?.youtubeUrl || ''} 
++                    onChange={(e) => updateUser({ youtubeUrl: e.target.value })} 
++                    className="text-sm"
++                  />
++                </div>
++                <p className="text-xs text-muted-foreground">Si añades tu canal, otros verán un icono junto a tu nombre.</p>
++                <Button onClick={() => setShowExtraOptions(false)} className="w-full mt-2">Guardar YouTube</Button>
++              </div>
++            </DialogContent>
++          </Dialog>
++          
+           <div className="w-full pt-4 border-t text-center">
+             <p className="text-xs text-blue-600 font-semibold">Derechos a Leonardo Humaza Poiqui</p>
+           </div>
