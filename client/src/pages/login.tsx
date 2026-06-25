@@ -240,7 +240,7 @@ export default function LoginPage() {
     import("@/hooks/use-toast").then(({ toast }) => {
       toast({ 
         title: "Correo enviado", 
-        description: `Simulación: Se envió el código ${code} a ${foundUser.googleLinked}`, 
+        description: `Se ha enviado el código a tu correo vinculado.`, 
         duration: 5000 
       });
     });
@@ -357,7 +357,7 @@ export default function LoginPage() {
               {!sentCode ? (
                 <>
                   <Input 
-                    placeholder="Tu usuario (ingrésalo arriba y aquí)" 
+                    placeholder="Tu usuario" 
                     value={forgotUsername}
                     onChange={(e) => setForgotUsername(e.target.value)}
                     className="bg-slate-900 border-slate-700 text-white h-10"
