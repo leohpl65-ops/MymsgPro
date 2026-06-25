@@ -570,21 +570,58 @@ export default function ChatPage() {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+            className="fixed inset-0 z-50 bg-black flex flex-col"
           >
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="absolute top-4 right-4 text-white hover:bg-white/20 z-50 bg-black/40 rounded-full"
-              onClick={() => setFullscreenImage(null)}
-            >
-              <X className="h-8 w-8" />
-            </Button>
-            <img 
-              src={fullscreenImage} 
-              alt="Fullscreen" 
-              className="max-w-full max-h-full object-contain" 
-            />
+            {/* Header for fullscreen image */}
+            <div className="bg-black/60 p-4 flex justify-between items-start w-full absolute top-0 z-50">
+              <div className="text-white">
+                <p className="text-sm font-medium">Enviada el:</p>
+                <p className="text-xs text-white/80">
+                  {(() => {
+                    const msg = chat.messages.find(m => 
+                      m.mediaUrl === fullscreenImage || 
+                      m.text?.replace('[IMAGE_URL:', '').replace(']', '') === fullscreenImage
+                    );
+                    if (!msg) return "";
+                    
+                    const msgDate = new Date(msg.timestamp);
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const beforeYesterday = new Date(today);
+                    beforeYesterday.setDate(beforeYesterday.getDate() - 2);
+
+                    const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    if (msgDate.toDateString() === today.toDateString()) {
+                      return `Hoy a las ${timeStr}`;
+                    } else if (msgDate.toDateString() === yesterday.toDateString()) {
+                      return `Ayer a las ${timeStr}`;
+                    } else if (msgDate.toDateString() === beforeYesterday.toDateString()) {
+                      return `Antier a las ${timeStr}`;
+                    } else {
+                      return `${msgDate.toLocaleDateString()} a las ${timeStr}`;
+                    }
+                  })()}
+                </p>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-white hover:bg-white/20 rounded-full shrink-0"
+                onClick={() => setFullscreenImage(null)}
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+            
+            <div className="flex-1 flex items-center justify-center p-4 pt-20">
+              <img 
+                src={fullscreenImage} 
+                alt="Fullscreen" 
+                className="max-w-full max-h-full object-contain" 
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

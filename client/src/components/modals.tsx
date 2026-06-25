@@ -86,6 +86,89 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
           </div>
           
           <Button onClick={handleSave} className="w-full">Guardar</Button>
+
+          {/* Backup Button */}
+          <div className="w-full pt-2">
+            <Button 
+              variant="secondary" 
+              className="w-full relative overflow-hidden"
+              onClick={() => {
+                const btn = document.getElementById('backup-btn-content');
+                const progress = document.getElementById('backup-progress');
+                if (btn && progress) {
+                  btn.style.opacity = '0.5';
+                  btn.innerText = 'Creando copia...';
+                  progress.style.width = '0%';
+                  progress.style.display = 'block';
+                  
+                  // Animate progress
+                  let width = 0;
+                  const interval = setInterval(() => {
+                    width += Math.random() * 15;
+                    if (width > 100) width = 100;
+                    progress.style.width = width + '%';
+                    
+                    if (width === 100) {
+                      clearInterval(interval);
+                      setTimeout(() => {
+                        // Create backup data
+                        const backupData = {
+                          timestamp: Date.now(),
+                          user: currentUser,
+                          data: Object.entries(localStorage)
+                            .filter(([key]) => key.startsWith('mymsg_'))
+                            .reduce((obj, [key, value]) => ({...obj, [key]: value}), {})
+                        };
+                        
+                        localStorage.setItem(`mymsg_backup_${currentUser?.id}`, JSON.stringify(backupData));
+                        
+                        btn.style.opacity = '1';
+                        btn.innerText = 'Hacer copia';
+                        progress.style.display = 'none';
+                        
+                        import("@/hooks/use-toast").then(({ toast }) => {
+                          toast({ description: "Copia de seguridad completada", duration: 3000 });
+                        });
+                        
+                        // Force re-render to update the last backup time
+                        setName(name + " ");
+                        setTimeout(() => setName(name), 10);
+                      }, 500);
+                    }
+                  }, 200);
+                }
+              }}
+            >
+              <span id="backup-btn-content" className="relative z-10 font-semibold">Hacer copia</span>
+              <div 
+                id="backup-progress" 
+                className="absolute left-0 top-0 bottom-0 bg-primary/20 transition-all duration-200 hidden"
+                style={{ width: '0%' }}
+              />
+            </Button>
+            <p className="text-[10px] text-muted-foreground text-center mt-1">
+              {(() => {
+                try {
+                  const backupStr = localStorage.getItem(`mymsg_backup_${currentUser?.id}`);
+                  if (!backupStr) return "Sin copias previas";
+                  
+                  const backup = JSON.parse(backupStr);
+                  const diffHours = (Date.now() - backup.timestamp) / (1000 * 60 * 60);
+                  
+                  if (diffHours < 1) return "hace menos de una hora";
+                  if (diffHours < 24) return `hace ${Math.floor(diffHours)} horas`;
+                  if (diffHours < 48) return "hace 1 día";
+                  if (diffHours < 24 * 7) return `hace ${Math.floor(diffHours / 24)} días`;
+                  if (diffHours < 24 * 14) return "hace 1 semana";
+                  if (diffHours < 24 * 30) return `hace ${Math.floor(diffHours / (24 * 7))} semanas`;
+                  if (diffHours < 24 * 60) return "hace 1 mes";
+                  return `hace ${Math.floor(diffHours / (24 * 30))} meses`;
+                } catch(e) {
+                  return "Sin copias previas";
+                }
+              })()}
+            </p>
+          </div>
           
           <Dialog>
             <DialogTrigger asChild>
@@ -109,6 +192,10 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
                 <div>
                   <h3 className="font-bold text-base mb-1">3. Cómo unirse a un grupo</h3>
                   <p className="text-muted-foreground">Similar a cómo agregar a un amigo, ve a las configuraciones del grupo, allí hay una ID. Tu amigo debe entrar a 👥+ y poner ese ID y listo.</p>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base mb-1">4. Cómo hacer copias de seguridad</h3>
+                  <p className="text-muted-foreground">Ve a "Mi Perfil" desde el menú de inicio y presiona "Hacer copia". Esto guardará todos tus mensajes y contactos para que no los pierdas.</p>
                 </div>
                 <div className="mt-6 pt-4 border-t text-center font-semibold text-primary">
                   ¡Disfruta de MyMsg :D!

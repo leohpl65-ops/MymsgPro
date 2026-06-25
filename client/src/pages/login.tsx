@@ -203,7 +203,7 @@ export default function LoginPage() {
       >
         <div className="text-center space-y-2">
           <div className="w-24 h-24 mx-auto mb-6">
-             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain" />
+             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain rounded-2xl shadow-sm" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">MyMsg Pro</h1>
           <p className="text-slate-400">Inicia sesión para chatear</p>

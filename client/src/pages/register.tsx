@@ -89,7 +89,7 @@ export default function RegisterPage() {
             <ArrowLeft className="h-6 w-6" />
           </Button>
           <div className="w-10 h-10 ml-2">
-             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain" />
+             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain rounded-xl shadow-sm" />
           </div>
           <h1 className="text-xl font-bold ml-2">Crear Cuenta</h1>
         </div>
