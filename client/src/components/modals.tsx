@@ -27,8 +27,25 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
 
   const [showGoogleDialog, setShowGoogleDialog] = useState(false);
   const [googleEmail, setGoogleEmail] = useState("");
+  const [linkMode, setLinkMode] = useState<'manual' | 'direct'>('manual');
 
   const [showExtraOptions, setShowExtraOptions] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    'Notification' in window && Notification.permission === 'granted'
+  );
+
+  const requestNotificationPermission = () => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationsEnabled(permission === 'granted');
+        if (permission === 'granted') {
+          import("@/hooks/use-toast").then(({ toast }) => {
+            toast({ description: "Notificaciones activadas", duration: 3000 });
+          });
+        }
+      });
+    }
+  };
 
   const handleSave = () => {
     const lowerName = name.toLowerCase();
@@ -121,24 +138,114 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
                 <DialogTitle>Vincular a Google</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Ingresa tu Gmail</Label>
-                  <Input 
-                    type="email" 
-                    value={googleEmail} 
-                    onChange={(e) => setGoogleEmail(e.target.value)}
-                    placeholder="tu@gmail.com"
-                  />
+                <div className="flex gap-2 bg-slate-100 p-1 rounded-lg mb-4">
+                  <Button 
+                    variant={linkMode === 'manual' ? 'default' : 'ghost'} 
+                    className="flex-1 h-8 text-xs" 
+                    onClick={() => setLinkMode('manual')}
+                  >
+                    Escribir correo
+                  </Button>
+                  <Button 
+                    variant={linkMode === 'direct' ? 'default' : 'ghost'} 
+                    className="flex-1 h-8 text-xs" 
+                    onClick={() => setLinkMode('direct')}
+                  >
+                    Vincular directamente
+                  </Button>
                 </div>
-                <Button className="w-full" onClick={() => {
-                  if (googleEmail.trim()) {
-                    updateUser({ googleLinked: googleEmail.trim() });
-                    setShowGoogleDialog(false);
-                    import("@/hooks/use-toast").then(({ toast }) => {
-                      toast({ description: "Cuenta vinculada correctamente", duration: 3000 });
-                    });
-                  }
-                }}>Vincular</Button>
+
+                {linkMode === 'manual' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Ingresa tu Gmail</Label>
+                      <Input 
+                        type="email" 
+                        value={googleEmail} 
+                        onChange={(e) => setGoogleEmail(e.target.value)}
+                        placeholder="tu@gmail.com"
+                      />
+                    </div>
+                    <Button className="w-full" onClick={() => {
+                      if (googleEmail.trim()) {
+                        updateUser({ googleLinked: googleEmail.trim() });
+                        setShowGoogleDialog(false);
+                        import("@/hooks/use-toast").then(({ toast }) => {
+                          toast({ description: "Cuenta vinculada correctamente", duration: 3000 });
+                        });
+                      }
+                    }}>Vincular</Button>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-4 py-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16 text-blue-500">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    <p className="text-center text-sm text-muted-foreground">
+                      Haz clic abajo para abrir la ventana de Google y elegir tu cuenta.
+                    </p>
+                    <Button className="w-full" onClick={() => {
+                      // Simulated Google popup behavior
+                      const popup = window.open('', '_blank', 'width=500,height=600');
+                      if (popup) {
+                        popup.document.write(`
+                          <html>
+                            <head>
+                              <title>Sign in with Google</title>
+                              <style>
+                                body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0f4f9; }
+                                .container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 320px; }
+                                h2 { color: #202124; margin-bottom: 20px; }
+                                .btn { background: #1a73e8; color: white; border: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; margin-top: 20px; }
+                                .mock-account { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #dadce0; border-radius: 24px; cursor: pointer; margin-bottom: 10px; }
+                                .mock-account:hover { background: #f8f9fa; }
+                                .avatar { width: 32px; height: 32px; border-radius: 50%; background: #1a73e8; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+                                .info { text-align: left; }
+                                .name { font-weight: 500; font-size: 14px; color: #3c4043; }
+                                .email { font-size: 12px; color: #5f6368; }
+                              </style>
+                            </head>
+                            <body>
+                              <div class="container">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:48px;height:48px;color:#4285f4;margin-bottom:16px;">
+                                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                                </svg>
+                                <h2>Elige una cuenta</h2>
+                                <p style="font-size:14px;color:#5f6368;margin-bottom:24px;">para ir a MyMsg Pro</p>
+                                
+                                <div class="mock-account" onclick="window.opener.postMessage('google_auth_success', '*'); window.close();">
+                                  <div class="avatar">U</div>
+                                  <div class="info">
+                                    <div class="name">Usuario de Prueba</div>
+                                    <div class="email">usuario@gmail.com</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </body>
+                          </html>
+                        `);
+                        
+                        const handleMessage = (event: MessageEvent) => {
+                          if (event.data === 'google_auth_success') {
+                            updateUser({ googleLinked: "usuario@gmail.com" });
+                            setShowGoogleDialog(false);
+                            import("@/hooks/use-toast").then(({ toast }) => {
+                              toast({ description: "Cuenta vinculada correctamente", duration: 3000 });
+                            });
+                            window.removeEventListener('message', handleMessage);
+                          }
+                        };
+                        window.addEventListener('message', handleMessage);
+                      }
+                    }}>Continuar con Google</Button>
+                  </div>
+                )}
               </div>
             </DialogContent>
           </Dialog>
@@ -442,6 +549,59 @@ export function UserSettingsModal({ open, onOpenChange }: { open: boolean; onOpe
                 <p className="text-xs text-muted-foreground">Si añades tu canal, otros verán un icono junto a tu nombre.</p>
                 <Button onClick={() => setShowExtraOptions(false)} className="w-full mt-2">Guardar YouTube</Button>
               </div>
+
+              {/* Notification Settings */}
+              <div className="w-full space-y-2 border-t pt-4">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-yellow-500">
+                    <path fillRule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.244.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clipRule="evenodd" />
+                  </svg>
+                  Notificaciones Push
+                </Label>
+                
+                {notificationsEnabled ? (
+                  <div className="bg-green-50 p-3 rounded-md border border-green-200">
+                    <p className="text-sm text-green-700 font-medium text-center">Notificaciones activadas</p>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 p-3 rounded-md border border-slate-200 space-y-2">
+                    <p className="text-sm text-slate-600 text-center">Las notificaciones no están activadas</p>
+                    <Button onClick={requestNotificationPermission} className="w-full" size="sm">
+                      Activar Notificaciones
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Google Account Settings */}
+              {currentUser?.googleLinked && (
+                <div className="w-full space-y-2 border-t pt-4">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-blue-500">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    Google Vinculado
+                  </Label>
+                  <div className="bg-slate-50 p-3 rounded-md border border-slate-200">
+                    <p className="text-sm font-medium text-center">
+                      {currentUser.googleLinked.replace(/(?<=.{4}).(?=[^@]*?@)/g, '*').replace(/(?<=@.).(?=.*\.)/g, '*')}
+                    </p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    className="w-full text-xs h-8"
+                    onClick={() => {
+                      setShowExtraOptions(false);
+                      setShowGoogleDialog(true);
+                    }}
+                  >
+                    Cambiar cuenta
+                  </Button>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
 
