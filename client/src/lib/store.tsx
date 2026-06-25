@@ -16,6 +16,7 @@ export interface User {
   language?: 'es' | 'en';
   status?: string; // added to match the login usage
   youtubeUrl?: string; // added youtube link
+  googleLinked?: string; // added google link
 }
 
 export interface Message {
