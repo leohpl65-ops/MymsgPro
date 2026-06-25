@@ -54,3 +54,4 @@ waitForPort = 5000
 [agent]
 mockupState = "MOCKUP"
 stack = "FULLSTACK_JS"
+expertMode = true
