@@ -88,7 +88,10 @@ export default function RegisterPage() {
           <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="text-white">
             <ArrowLeft className="h-6 w-6" />
           </Button>
-          <h1 className="text-xl font-bold">Crear Cuenta</h1>
+          <div className="w-10 h-10 ml-2">
+             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain" />
+          </div>
+          <h1 className="text-xl font-bold ml-2">Crear Cuenta</h1>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

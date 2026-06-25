@@ -202,8 +202,8 @@ export default function LoginPage() {
         className="w-full space-y-8"
       >
         <div className="text-center space-y-2">
-          <div className="bg-primary/20 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-             <MessageCircle className="w-10 h-10 text-primary" />
+          <div className="w-24 h-24 mx-auto mb-6">
+             <img src="/src/assets/logo.png" alt="MyMsg Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">MyMsg Pro</h1>
           <p className="text-slate-400">Inicia sesión para chatear</p>
