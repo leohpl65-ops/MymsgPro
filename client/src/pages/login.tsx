@@ -245,10 +245,10 @@ export default function LoginPage() {
     };
 
     emailjs.send(
-      "service_ff94kiq", // Service ID de tus fotos
-      "TU_TEMPLATE_ID", // TODO: Reemplazar
+      "service_ff94kiq", // Service ID
+      "template_9yuhjns", // Template ID
       templateParams,
-      "TU_PUBLIC_KEY" // TODO: Reemplazar
+      "0o7HK3NHxh9Nn_PPk" // Public Key
     ).then(() => {
       import("@/hooks/use-toast").then(({ toast }) => {
         toast({ 
