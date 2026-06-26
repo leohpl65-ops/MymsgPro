@@ -141,9 +141,17 @@ export default function ChatPage() {
                       icon: callData.fromAvatar,
                     },
                   );
-                  notification.onclick = function () {
-                    window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+                  notification.onclick = function (event) {
+                    event.preventDefault();
+                    window.focus();
                   };
+
+                  // Play a sound if possible
+                  try {
+                    const audio = new Audio('/ringtone.mp3'); 
+                    audio.play().catch(e => console.log('Audio play failed:', e));
+                  } catch(e) {}
+
                 } catch (e) {
                   console.warn("Notification error:", e);
                 }
