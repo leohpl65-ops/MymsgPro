@@ -500,77 +500,124 @@ export function UserSettingsModal({
 
           {/* Backup Button */}
           <div className="w-full pt-2">
-            <Button
-              variant="secondary"
-              className="w-full relative overflow-hidden"
-              onClick={() => {
-                const btn = document.getElementById("backup-btn-content");
-                const progress = document.getElementById("backup-progress");
-                if (btn && progress) {
-                  btn.style.opacity = "0.5";
-                  btn.innerText = "Creando copia...";
-                  progress.style.width = "0%";
-                  progress.style.display = "block";
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 relative overflow-hidden"
+                      onClick={() => {
+                        const btn = document.getElementById("backup-btn-content");
+                        const progress = document.getElementById("backup-progress");
+                        if (btn && progress) {
+                          btn.style.opacity = "0.5";
+                          btn.innerText = "Creando...";
+                          progress.style.width = "0%";
+                          progress.style.display = "block";
 
-                  // Animate progress
-                  let width = 0;
-                  const interval = setInterval(() => {
-                    width += Math.random() * 15;
-                    if (width > 100) width = 100;
-                    progress.style.width = width + "%";
+                          let width = 0;
+                          const interval = setInterval(() => {
+                            width += Math.random() * 15;
+                            if (width > 100) width = 100;
+                            progress.style.width = width + "%";
 
-                    if (width === 100) {
-                      clearInterval(interval);
-                      setTimeout(() => {
-                        // Create backup data
-                        const backupData = {
-                          timestamp: Date.now(),
-                          user: currentUser,
-                          data: Object.entries(localStorage)
-                            .filter(([key]) => key.startsWith("mymsg_"))
-                            .reduce(
-                              (obj, [key, value]) => ({ ...obj, [key]: value }),
-                              {},
-                            ),
-                        };
+                            if (width === 100) {
+                              clearInterval(interval);
+                              setTimeout(() => {
+                                const backupData = {
+                                  timestamp: Date.now(),
+                                  user: currentUser,
+                                  data: Object.entries(localStorage)
+                                    .filter(([key]) => key.startsWith("mymsg_"))
+                                    .reduce(
+                                      (obj, [key, value]) => ({ ...obj, [key]: value }),
+                                      {},
+                                    ),
+                                };
 
-                        localStorage.setItem(
-                          `mymsg_backup_${currentUser?.id}`,
-                          JSON.stringify(backupData),
-                        );
+                                localStorage.setItem(
+                                  `mymsg_backup_${currentUser?.id}`,
+                                  JSON.stringify(backupData),
+                                );
 
-                        btn.style.opacity = "1";
-                        btn.innerText = "Hacer copia";
-                        progress.style.display = "none";
+                                btn.style.opacity = "1";
+                                btn.innerText = "Hacer copia";
+                                progress.style.display = "none";
 
-                        import("@/hooks/use-toast").then(({ toast }) => {
-                          toast({
-                            description: "Copia de seguridad completada",
-                            duration: 3000,
+                                import("@/hooks/use-toast").then(({ toast }) => {
+                                  toast({
+                                    description: "Copia de seguridad completada",
+                                    duration: 3000,
+                                  });
+                                });
+
+                                setName(name + " ");
+                                setTimeout(() => setName(name), 10);
+                              }, 500);
+                            }
+                          }, 200);
+                        }
+                      }}
+                    >
+                      <span
+                        id="backup-btn-content"
+                        className="relative z-10 text-xs"
+                      >
+                        Hacer copia
+                      </span>
+                      <div
+                        id="backup-progress"
+                        className="absolute left-0 top-0 bottom-0 bg-primary/20 transition-all duration-200 hidden"
+                        style={{ width: "0%" }}
+                      />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="flex-1 text-xs"
+                      onClick={() => {
+                        const backupStr = localStorage.getItem(`mymsg_backup_${currentUser?.id}`);
+                        if (backupStr) {
+                          try {
+                            const backupData = JSON.parse(backupStr);
+                            if (backupData.data) {
+                              // Restore data
+                              Object.entries(backupData.data).forEach(([key, value]) => {
+                                localStorage.setItem(key, value as string);
+                              });
+                              
+                              import("@/hooks/use-toast").then(({ toast }) => {
+                                toast({
+                                  description: "Copia restaurada exitosamente. Recarga la página para ver los cambios.",
+                                  duration: 5000,
+                                });
+                              });
+                              
+                              // Optional: reload the page after a short delay
+                              setTimeout(() => {
+                                window.location.reload();
+                              }, 2000);
+                            }
+                          } catch (e) {
+                            import("@/hooks/use-toast").then(({ toast }) => {
+                              toast({
+                                description: "Error al restaurar la copia",
+                                variant: "destructive",
+                                duration: 3000,
+                              });
+                            });
+                          }
+                        } else {
+                          import("@/hooks/use-toast").then(({ toast }) => {
+                            toast({
+                              description: "No hay ninguna copia de seguridad guardada",
+                              variant: "destructive",
+                              duration: 3000,
+                            });
                           });
-                        });
-
-                        // Force re-render to update the last backup time
-                        setName(name + " ");
-                        setTimeout(() => setName(name), 10);
-                      }, 500);
-                    }
-                  }, 200);
-                }
-              }}
-            >
-              <span
-                id="backup-btn-content"
-                className="relative z-10 font-semibold"
-              >
-                Hacer copia
-              </span>
-              <div
-                id="backup-progress"
-                className="absolute left-0 top-0 bottom-0 bg-primary/20 transition-all duration-200 hidden"
-                style={{ width: "0%" }}
-              />
-            </Button>
+                        }
+                      }}
+                    >
+                      Cargar copia
+                    </Button>
+                  </div>
           </div>
 
           <Dialog>
