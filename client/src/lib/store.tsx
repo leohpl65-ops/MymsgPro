@@ -693,6 +693,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       JSON.stringify(newGroup),
     );
 
+    // Update state immediately to show to user
+    setChats((prev) => {
+      // Check if group already exists to prevent duplicates
+      if (prev.some(c => c.id === groupId)) return prev;
+      return [newGroup, ...prev];
+    });
+
     // Try to create it in Firebase for global access
     try {
       const { set, ref } = await import("firebase/database");
@@ -703,8 +710,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Error creating group in Firebase", e);
     }
-
-    setChats((prev) => [newGroup, ...prev]);
   };
 
   const joinGroup = async (groupId: string) => {
@@ -989,9 +994,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     icon: c.avatar,
                   },
                 );
-                notification.onclick = function () {
-                  window.open("https://mymsg-pro-3jm7.vercel.app", "_blank");
+                notification.onclick = function (event) {
+                  event.preventDefault();
+                  window.focus();
                 };
+
+                // Play a sound if possible
+                try {
+                  const audio = new Audio('/ringtone.mp3'); 
+                  audio.play().catch(e => console.log('Audio play failed:', e));
+                } catch(e) {}
               } catch (e) {
                 console.warn(
                   "Notification error (mobile browsers require ServiceWorker):",

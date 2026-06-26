@@ -11,23 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
-import {
-  User,
-  LogOut,
-  Settings,
-  ShieldAlert,
-  Image as ImageIcon,
-  AlertCircle,
-  MessageSquare,
-  ChevronDown,
-  ChevronUp,
-  PhoneMissed,
-  PhoneForwarded,
-  PhoneIncoming,
-  Clock,
-  X,
-  Info,
-} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info, Bell, Key, HardDrive, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState as useStateImport } from "react";
 
@@ -843,6 +828,18 @@ export function GroupMenuModal({
   const [newGroupName, setNewGroupName] = useState("");
   const [joinGroupId, setJoinGroupId] = useState("");
 
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateGroup = async () => {
+    if (newGroupName.trim() && !isCreating) {
+      setIsCreating(true);
+      await createGroup(newGroupName);
+      setNewGroupName("");
+      setIsCreating(false);
+      onOpenChange(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xs" aria-describedby="groups-dialog">
@@ -857,17 +854,15 @@ export function GroupMenuModal({
                 placeholder="Nombre del grupo"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-              />
-              <Button
-                onClick={() => {
-                  if (newGroupName.trim()) {
-                    createGroup(newGroupName);
-                    setNewGroupName("");
-                    onOpenChange(false);
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateGroup();
                   }
                 }}
-              >
-                Crear
+                disabled={isCreating}
+              />
+              <Button onClick={handleCreateGroup} disabled={isCreating}>
+                {isCreating ? "Creando..." : "Crear"}
               </Button>
             </div>
           </div>
