@@ -576,7 +576,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       console.error("Firebase fetch error", e);
     }
 
-    if (!savedUserStr && id !== "12345670") {
+    if (!savedUserStr && id !== "12345670" && id !== "Owner333") {
       throw new Error("Esta cuenta no existe. Prueba otra vez.");
     }
 
