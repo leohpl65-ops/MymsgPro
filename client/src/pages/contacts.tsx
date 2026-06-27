@@ -51,7 +51,8 @@ export default function ContactsPage() {
 
   // Admin & Mod Checks
   const isAdmin = currentUser.id === "12345670";
-  const isModerator = currentUser.id === "Owner333";
+  const { admins } = useStore();
+  const isModerator = currentUser.id === "Owner333" || admins?.includes(currentUser.id);
   const canViewReports = isAdmin || isModerator;
 
   return (

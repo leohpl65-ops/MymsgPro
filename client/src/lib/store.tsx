@@ -106,6 +106,9 @@ interface StoreContextType {
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
   updateGroup: (groupId: string, updates: Partial<Chat>) => void;
+  admins: string[];
+  addAdmin: (userId: string) => void;
+  removeAdmin: (userId: string) => void;
   reports: Report[];
   reportEntity: (
     type: "Usuario" | "Grupo",
@@ -149,6 +152,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [admins, setAdmins] = useState<string[]>([]);
+
+  // Load admins
+  useEffect(() => {
+    import("firebase/database").then(({ ref, onValue }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        const adminsRef = ref(db, "admins");
+        onValue(adminsRef, (snapshot) => {
+          if (snapshot.exists()) {
+            setAdmins(Object.keys(snapshot.val()));
+          } else {
+            setAdmins([]);
+          }
+        });
+      });
+    });
+  }, []);
 
   // Offline detection
   useEffect(() => {
@@ -1136,6 +1156,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const addAdmin = async (userId: string) => {
+    if (!currentUser || currentUser.id !== "12345670") return;
+    try {
+      const { ref, set } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      await set(ref(db, `admins/${userId}`), true);
+    } catch (e) {
+      console.error("Failed to add admin", e);
+    }
+  };
+
+  const removeAdmin = async (userId: string) => {
+    if (!currentUser || currentUser.id !== "12345670") return;
+    try {
+      const { ref, remove } = await import("firebase/database");
+      const { db } = await import("@/lib/firebase");
+      await remove(ref(db, `admins/${userId}`));
+    } catch (e) {
+      console.error("Failed to remove admin", e);
+    }
+  };
+
   const reportEntity = (
     type: "Usuario" | "Grupo",
     targetId: string,
@@ -1311,6 +1353,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     getChat,
     updateUser,
     updateGroup,
+    admins,
+    addAdmin,
+    removeAdmin,
     reports,
     reportEntity,
     setChatWallpaper,

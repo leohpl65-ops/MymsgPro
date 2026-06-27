@@ -545,10 +545,13 @@ export default function ChatPage() {
   const longPressTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // Redirect if invalid chat
-  if (!chat || !currentUser) {
-    useEffect(() => {
+  useEffect(() => {
+    if (!chat || !currentUser) {
       setLocation("/contacts");
-    }, []);
+    }
+  }, [chat, currentUser, setLocation]);
+
+  if (!chat || !currentUser) {
     return null;
   }
 
