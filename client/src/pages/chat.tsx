@@ -965,6 +965,7 @@ export default function ChatPage() {
                     )}
                     onContextMenu={(e) => {
                       e.preventDefault();
+                      if (navigator.vibrate) navigator.vibrate(50);
                       setSelectedMessage(msg.id);
                     }}
                     onMouseDown={handleMouseDown}

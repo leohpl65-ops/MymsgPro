@@ -32,6 +32,8 @@ export interface User {
   status?: string; // added to match the login usage
   youtubeUrl?: string; // added youtube link
   googleLinked?: string; // added google link
+  banned?: boolean;
+  punishedUntil?: number;
 }
 
 export interface Message {

@@ -182,6 +182,16 @@ export default function LoginPage() {
       console.warn("Could not sync user from Firebase during login", e);
     }
     
+    if (foundUser.banned) {
+      setLoginError("has sido baneado permanentemente de mymsgpro.");
+      return;
+    }
+    
+    if (foundUser.punishedUntil && foundUser.punishedUntil > Date.now()) {
+      setLoginError("esta cuenta ha sido castigada 3 dias por infringir nuestras reglas");
+      return;
+    }
+
     try {
       await login(foundUser.name, foundUserId, data.password);
       localStorage.removeItem("mymsg_login_attempts");
