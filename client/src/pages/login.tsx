@@ -83,7 +83,7 @@ export default function LoginPage() {
     
     // Check if it's admin or owner trying to login by name
     if (data.name.toLowerCase() === 'theowner' && data.password === 'ImTheOwner123') {
-      await login("TheOwner", "Owner333", "ImTheOwner123");
+      await login("TheOwner", "12345670", "ImTheOwner123");
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       return;
