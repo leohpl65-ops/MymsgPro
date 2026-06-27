@@ -7,12 +7,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info, Bell, Key, HardDrive, Mail } from "lucide-react";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info, Bell, Key, HardDrive, Mail, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState as useStateImport } from "react";
 
