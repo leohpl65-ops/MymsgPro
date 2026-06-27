@@ -21,6 +21,8 @@ import {
   AddFriendModal,
   ReportsModal,
   CallHistoryModal,
+  AdminMenuModal,
+  AllUsersModal,
 } from "@/components/modals";
 import { motion } from "framer-motion";
 
@@ -33,6 +35,8 @@ export default function ContactsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showAdminMenu, setShowAdminMenu] = useState(false);
+  const [showAllUsers, setShowAllUsers] = useState(false);
 
   // Redirect if not logged in
   React.useEffect(() => {
@@ -65,9 +69,9 @@ export default function ContactsPage() {
               size="sm"
               variant="ghost"
               className="h-8 hover:bg-white/10 text-yellow-500 flex items-center"
-              onClick={() => setShowReports(true)}
+              onClick={() => setShowAdminMenu(true)}
             >
-              <span className="font-bold text-xs mr-1">OWNER</span>
+              <span className="font-bold text-xs mr-1">ADMIN</span>
               <ShieldAlert className="h-5 w-5" />
             </Button>
           )}
@@ -229,6 +233,16 @@ export default function ContactsPage() {
       <CallHistoryModal
         open={showCallHistory}
         onOpenChange={setShowCallHistory}
+      />
+      <AdminMenuModal 
+        open={showAdminMenu} 
+        onOpenChange={setShowAdminMenu}
+        onOpenReports={() => setShowReports(true)}
+        onOpenAllUsers={() => setShowAllUsers(true)}
+      />
+      <AllUsersModal 
+        open={showAllUsers} 
+        onOpenChange={setShowAllUsers} 
       />
     </MobileLayout>
   );

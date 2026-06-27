@@ -1347,14 +1347,56 @@ export function ReportsModal({
       duration: 3000,
     });
 
-    // Kick user by sending them a message from Owner
-    const adminId = "12345670";
-    import("firebase/database").then(({ ref, push, set }) => {
+    // Update Firebase to mark user as banned
+    import("firebase/database").then(({ ref, update, push, set }) => {
       import("@/lib/firebase").then(({ db }) => {
+        update(ref(db, `users/${targetId}`), { banned: true });
+
+        // Kick user by sending them a message from Owner
+        const adminId = "12345670";
         const kickMsg = {
           id: `kick-${Date.now()}`,
           senderId: adminId,
-          text: "has sido kickeado por el owner",
+          text: "has sido baneado permanentemente de mymsgpro.",
+          timestamp: Date.now(),
+          type: "text",
+          status: "sent",
+          read: false,
+        };
+        const fbMsgRef = push(
+          ref(db, `offline_messages/${targetId}/from_${adminId}`),
+        );
+        set(fbMsgRef, kickMsg);
+      });
+    });
+
+    deleteReport(reportId);
+  };
+
+  const handlePunish = async (
+    reportId: string,
+    targetName: string,
+    targetId: string,
+  ) => {
+    const { toast } = await import("@/hooks/use-toast");
+    toast({
+      description: `El usuario ${targetName} ha sido castigado por 3 días.`,
+      duration: 3000,
+    });
+
+    // Update Firebase to mark user as punished for 3 days
+    import("firebase/database").then(({ ref, update, push, set }) => {
+      import("@/lib/firebase").then(({ db }) => {
+        update(ref(db, `users/${targetId}`), { 
+          punishedUntil: Date.now() + 3 * 24 * 60 * 60 * 1000 
+        });
+
+        // Kick user by sending them a message from Owner
+        const adminId = "12345670";
+        const kickMsg = {
+          id: `kick-${Date.now()}`,
+          senderId: adminId,
+          text: "esta cuenta ha sido castigada 3 dias por infringir nuestras reglas",
           timestamp: Date.now(),
           type: "text",
           status: "sent",
@@ -1472,24 +1514,154 @@ export function ReportsModal({
                     <div className="flex gap-2 pt-2 border-t border-red-200 dark:border-red-800">
                       <Button
                         variant="destructive"
-                        className="flex-1 text-xs"
+                        className="flex-1 text-[10px] px-1"
                         onClick={() =>
                           handleBan(r.id, r.targetName, r.targetId)
                         }
                       >
-                        Banear
+                        Permaban
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="flex-1 text-[10px] px-1"
+                        onClick={() =>
+                          handlePunish(r.id, r.targetName, r.targetId)
+                        }
+                      >
+                        Castigar
                       </Button>
                       <Button
                         variant="outline"
-                        className="flex-1 text-xs"
+                        className="flex-1 text-[10px] px-1"
                         onClick={() => handleFree(r.id)}
                       >
-                        Dejar Libre
+                        Perdonar
                       </Button>
                     </div>
                   </motion.div>
                 )}
               </motion.div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function AdminMenuModal({
+  open,
+  onOpenChange,
+  onOpenReports,
+  onOpenAllUsers,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onOpenReports: () => void;
+  onOpenAllUsers: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-yellow-600" />
+            Panel de Administración
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 py-4">
+          <Button 
+            className="w-full justify-start h-12" 
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              onOpenReports();
+            }}
+          >
+            <ShieldAlert className="mr-2 h-5 w-5 text-yellow-600" />
+            Reportes
+          </Button>
+          <Button 
+            className="w-full justify-start h-12" 
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              onOpenAllUsers();
+            }}
+          >
+            <Users className="mr-2 h-5 w-5 text-blue-500" />
+            Ver Usuarios
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function AllUsersModal({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { getAllUsers } = useStore();
+  const [search, setSearch] = useState("");
+  const users = Array.from(getAllUsers().values());
+  
+  const filteredUsers = users.filter((u) => {
+    const s = search.toLowerCase();
+    return (
+      u.name.toLowerCase().includes(s) ||
+      u.id.toLowerCase().includes(s) ||
+      (u.originalName && u.originalName.toLowerCase().includes(s))
+    );
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-blue-500" />
+            Todos los Usuarios
+          </DialogTitle>
+        </DialogHeader>
+        
+        <div className="pt-2 pb-4">
+          <Input 
+            placeholder="Buscar por nombre o ID..." 
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {filteredUsers.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8 text-sm">
+              No se encontraron usuarios
+            </p>
+          ) : (
+            filteredUsers.map((user) => (
+              <div key={user.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition">
+                <Avatar className="h-10 w-10 border shadow-sm">
+                  <AvatarImage src={user.avatar} />
+                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                    {user.name.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm truncate">{user.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono truncate">ID: {user.id}</p>
+                  {user.originalName && user.originalName !== user.name && (
+                    <p className="text-[10px] text-muted-foreground truncate">Orig: {user.originalName}</p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 text-[10px] items-end">
+                  {user.banned && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold">Baneado</span>}
+                  {user.punishedUntil && user.punishedUntil > Date.now() && <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">Castigado</span>}
+                </div>
+              </div>
             ))
           )}
         </div>
