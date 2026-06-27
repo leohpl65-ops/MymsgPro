@@ -538,6 +538,16 @@ export function UserSettingsModal({
                                   JSON.stringify(backupData),
                                 );
 
+                                // Save to Firebase for cloud sync
+                                if (currentUser) {
+                                  import("@/lib/firebase").then(({ db }) => {
+                                    import("firebase/database").then(({ ref, set }) => {
+                                      set(ref(db, `backups/${currentUser.id}`), backupData)
+                                        .catch(e => console.error("Firebase backup error", e));
+                                    });
+                                  });
+                                }
+
                                 btn.style.opacity = "1";
                                 btn.innerText = "Hacer copia";
                                 progress.style.display = "none";
@@ -572,8 +582,30 @@ export function UserSettingsModal({
                     <Button
                       variant="secondary"
                       className="flex-1 text-xs"
-                      onClick={() => {
-                        const backupStr = localStorage.getItem(`mymsg_backup_${currentUser?.id}`);
+                      onClick={async () => {
+                        const btn = document.getElementById("restore-btn-content");
+                        if (btn) {
+                          btn.innerText = "Cargando...";
+                        }
+                        
+                        let backupStr = localStorage.getItem(`mymsg_backup_${currentUser?.id}`);
+                        
+                        // Try to get from Firebase if not in localStorage or to get the latest
+                        if (currentUser) {
+                          try {
+                            const { db } = await import("@/lib/firebase");
+                            const { ref, get } = await import("firebase/database");
+                            const snapshot = await get(ref(db, `backups/${currentUser.id}`));
+                            if (snapshot.exists()) {
+                              const cloudData = snapshot.val();
+                              // Use cloud data if it exists
+                              backupStr = JSON.stringify(cloudData);
+                            }
+                          } catch (e) {
+                            console.error("Firebase restore error", e);
+                          }
+                        }
+
                         if (backupStr) {
                           try {
                             const backupData = JSON.parse(backupStr);
@@ -596,6 +628,7 @@ export function UserSettingsModal({
                               }, 2000);
                             }
                           } catch (e) {
+                            if (btn) btn.innerText = "Cargar copia";
                             import("@/hooks/use-toast").then(({ toast }) => {
                               toast({
                                 description: "Error al restaurar la copia",
@@ -605,6 +638,7 @@ export function UserSettingsModal({
                             });
                           }
                         } else {
+                          if (btn) btn.innerText = "Cargar copia";
                           import("@/hooks/use-toast").then(({ toast }) => {
                             toast({
                               description: "No hay ninguna copia de seguridad guardada",
@@ -615,7 +649,7 @@ export function UserSettingsModal({
                         }
                       }}
                     >
-                      Cargar copia
+                      <span id="restore-btn-content">Cargar copia</span>
                     </Button>
                   </div>
           </div>
