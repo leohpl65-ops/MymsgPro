@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const onSubmit = (data: { name: string; password: string }) => {
     setRegisterError("");
     
-    if (data.name.toLowerCase() === 'leo33445') {
+    if (data.name.toLowerCase() === 'leo33445' || data.name.toLowerCase() === 'theowner' || data.name.toLowerCase() === 'owner') {
       setRegisterError("Este nombre está reservado y no puede ser usado.");
       return;
     }

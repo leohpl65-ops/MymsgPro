@@ -1,0 +1,1 @@
+El panel de administrador permite banear y perdonar usuarios.\nEl dueno principal tiene el nombre TheOwner.
