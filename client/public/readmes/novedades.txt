@@ -1,0 +1,1 @@
+Version Pro: Ahora incluye llamadas, reportes y panel de control.
