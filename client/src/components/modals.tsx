@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info, Bell, Key, HardDrive, Mail, Users } from "lucide-react";
+import { User, LogOut, Settings, ShieldAlert, Image as ImageIcon, AlertCircle, MessageSquare, ChevronDown, ChevronUp, PhoneMissed, PhoneForwarded, PhoneIncoming, Clock, X, Info, Bell, Key, HardDrive, Mail, Users, UserPlus, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState as useStateImport } from "react";
 
@@ -1555,12 +1555,17 @@ export function AdminMenuModal({
   onOpenChange,
   onOpenReports,
   onOpenAllUsers,
+  onOpenAddAdmin,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenReports: () => void;
   onOpenAllUsers: () => void;
+  onOpenAddAdmin?: () => void;
 }) {
+  const { currentUser } = useStore();
+  const isOwner = currentUser?.id === "12345670";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -1593,6 +1598,111 @@ export function AdminMenuModal({
             <Users className="mr-2 h-5 w-5 text-blue-500" />
             Ver Usuarios
           </Button>
+
+          {isOwner && onOpenAddAdmin && (
+            <Button 
+              className="w-full justify-start h-12" 
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onOpenAddAdmin();
+              }}
+            >
+              <UserPlus className="mr-2 h-5 w-5 text-purple-500" />
+              Agregar Admins
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function AddAdminModal({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { addAdmin, removeAdmin, admins, getAllUsers } = useStore();
+  const [search, setSearch] = useState("");
+  const users = Array.from(getAllUsers().values());
+
+  const filteredUsers = users.filter((u) => {
+    const s = search.toLowerCase();
+    return (
+      u.name.toLowerCase().includes(s) ||
+      u.id.toLowerCase().includes(s) ||
+      (u.originalName && u.originalName.toLowerCase().includes(s))
+    );
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-purple-500" />
+            Administrar Admins
+          </DialogTitle>
+        </DialogHeader>
+        
+        <div className="relative mb-2">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar usuario por nombre o ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto pr-2 space-y-2">
+          {filteredUsers.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4 text-sm">
+              No se encontraron usuarios
+            </p>
+          ) : (
+            filteredUsers.map((u) => (
+              <div
+                key={u.id}
+                className="flex items-center justify-between p-3 border rounded-lg bg-card"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <Avatar>
+                    <AvatarImage src={u.avatar} />
+                    <AvatarFallback>{u.name[0]?.toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div className="overflow-hidden">
+                    <p className="font-medium text-sm truncate">{u.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      ID: {u.id}
+                    </p>
+                  </div>
+                </div>
+                
+                {admins.includes(u.id) ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => removeAdmin(u.id)}
+                  >
+                    Quitar
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => addAdmin(u.id)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    Agregar
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </DialogContent>
     </Dialog>

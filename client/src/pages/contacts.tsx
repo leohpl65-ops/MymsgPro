@@ -23,6 +23,7 @@ import {
   CallHistoryModal,
   AdminMenuModal,
   AllUsersModal,
+  AddAdminModal,
 } from "@/components/modals";
 import { motion } from "framer-motion";
 
@@ -37,6 +38,7 @@ export default function ContactsPage() {
   const [showCallHistory, setShowCallHistory] = useState(false);
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showAllUsers, setShowAllUsers] = useState(false);
+  const [showAddAdmin, setShowAddAdmin] = useState(false);
 
   // Redirect if not logged in
   React.useEffect(() => {
@@ -240,11 +242,13 @@ export default function ContactsPage() {
         onOpenChange={setShowAdminMenu}
         onOpenReports={() => setShowReports(true)}
         onOpenAllUsers={() => setShowAllUsers(true)}
+        onOpenAddAdmin={() => setShowAddAdmin(true)}
       />
       <AllUsersModal 
         open={showAllUsers} 
         onOpenChange={setShowAllUsers} 
       />
+      <AddAdminModal open={showAddAdmin} onOpenChange={setShowAddAdmin} />
     </MobileLayout>
   );
 }
