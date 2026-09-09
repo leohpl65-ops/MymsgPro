@@ -9,6 +9,11 @@ const firebaseDatabaseUrl =
   process.env.FIREBASE_DATABASE_URL ||
   "https://mymsg-red-default-rtdb.firebaseio.com";
 const uploadDirectory = path.resolve(process.cwd(), "uploads");
+const safeInlineExtensions = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp",
+  ".mp3", ".wav", ".ogg", ".m4a", ".webm",
+]);
+const failedLogins = new Map<string, { count: number; resetAt: number }>();
 
 type FirebaseUser = {
   id?: string;
@@ -33,7 +38,6 @@ function publicUser(user: FirebaseUser, id: string) {
     banned: user.banned,
     punishedUntil: user.punishedUntil,
     youtubeUrl: user.youtubeUrl,
-    googleLinked: user.googleLinked,
     status: "offline",
   };
 }
@@ -64,12 +68,28 @@ async function readFirebaseUsers(): Promise<Record<string, FirebaseUser>> {
   return (await response.json()) || {};
 }
 
+async function readFirebaseUser(id: string): Promise<FirebaseUser | undefined> {
+  const response = await fetch(`${firebaseDatabaseUrl}/users/${encodeURIComponent(id)}.json`);
+  if (!response.ok) throw new Error("No se pudo conectar con el servidor de usuarios");
+  return (await response.json()) || undefined;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   // Uploaded attachments must work in development and production.
-  app.use("/uploads", express.static(uploadDirectory));
+  app.use(
+    "/uploads",
+    express.static(uploadDirectory, {
+      setHeaders(response, filePath) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        if (!safeInlineExtensions.has(path.extname(filePath).toLowerCase())) {
+          response.setHeader("Content-Disposition", "attachment");
+        }
+      },
+    }),
+  );
   // put application routes here
   // prefix all routes with /api
 
@@ -79,6 +99,11 @@ export async function registerRoutes(
   app.post("/api/auth/login", async (req, res) => {
     const name = String(req.body?.name || "").trim();
     const password = String(req.body?.password || "");
+    const address = req.ip || "unknown";
+    const attempt = failedLogins.get(address);
+    if (attempt && attempt.resetAt > Date.now() && attempt.count >= 7) {
+      return res.status(429).json({ message: "Demasiados intentos. Espera unos minutos." });
+    }
     if (!name || !password) {
       return res.status(400).json({ message: "Nombre y contraseña son requeridos" });
     }
@@ -91,10 +116,16 @@ export async function registerRoutes(
       });
 
       if (!entry || !passwordMatches(password, entry[1].password)) {
+        const current = failedLogins.get(address);
+        failedLogins.set(address, {
+          count: (current && current.resetAt > Date.now() ? current.count : 0) + 1,
+          resetAt: Date.now() + 3 * 60 * 1000,
+        });
         return res.status(401).json({ message: "Usuario o contraseña incorrectos" });
       }
 
       const [id, user] = entry;
+      failedLogins.delete(address);
       // Upgrade old plaintext records after a successful login. The password
       // remains server-side and is never included in the response.
       if (user.password && !user.password.startsWith("scrypt:")) {
@@ -105,6 +136,7 @@ export async function registerRoutes(
         });
       }
 
+      req.session.userId = id;
       return res.json({ user: publicUser(user, id) });
     } catch (error) {
       console.error("Login error:", error);
@@ -151,6 +183,7 @@ export async function registerRoutes(
         body: JSON.stringify(user),
       });
       if (!response.ok) throw new Error("No se pudo crear la cuenta");
+      req.session.userId = id;
       return res.status(201).json({ user: publicUser(user, id) });
     } catch (error) {
       console.error("Registration error:", error);
@@ -158,7 +191,45 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/auth/me", (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ authenticated: false });
+    return res.json({ authenticated: true, userId: req.session.userId });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => res.status(204).end());
+  });
+
+  app.post("/api/auth/change-password", async (req, res) => {
+    const userId = req.session.userId;
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (!userId) return res.status(401).json({ message: "Sesión no válida" });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "La nueva contraseña debe tener al menos 8 caracteres" });
+    }
+    try {
+      const user = await readFirebaseUser(userId);
+      if (!user || !passwordMatches(currentPassword, user.password)) {
+        return res.status(403).json({ message: "La contraseña actual es incorrecta" });
+      }
+      const response = await fetch(`${firebaseDatabaseUrl}/users/${encodeURIComponent(userId)}.json`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: hashPassword(newPassword) }),
+      });
+      if (!response.ok) throw new Error("No se pudo cambiar la contraseña");
+      return res.status(204).end();
+    } catch (error) {
+      console.error("Password change error:", error);
+      return res.status(503).json({ message: "No se pudo cambiar la contraseña" });
+    }
+  });
+
   app.post("/api/uploads", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Debes iniciar sesión para subir archivos" });
+    }
     const dataUrl = String(req.body?.dataUrl || "");
     const fileName = String(req.body?.fileName || "archivo");
     const mimeType = String(req.body?.mimeType || "application/octet-stream");

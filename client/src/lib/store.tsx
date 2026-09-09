@@ -327,6 +327,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Save user
   useEffect(() => {
     if (currentUser) {
+      fetch("/api/auth/me")
+        .then((response) => {
+          if (!response.ok) {
+            setCurrentUser(null);
+            setChats([]);
+            localStorage.removeItem("mymsg_user");
+          }
+        })
+        .catch(() => {
+          setCurrentUser(null);
+          setChats([]);
+          localStorage.removeItem("mymsg_user");
+        });
       localStorage.setItem("mymsg_user", JSON.stringify(currentUser));
       localStorage.setItem(
         `mymsg_user_${currentUser.id}`,
@@ -679,6 +692,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setCurrentUser(null);
     setChats([]);
   };

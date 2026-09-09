@@ -461,21 +461,30 @@ export function UserSettingsModal({
                         onChange={(e) => setNewPwd(e.target.value)}
                       />
                     </div>
-                    <Button
+                     <Button
                       className="w-full"
-                      onClick={() => {
-                        if (
-                          pwdMode === "current" &&
-                          currentPwd !== currentUser?.password
-                        ) {
-                          setPwdError("La contraseña actual es incorrecta");
-                          return;
-                        }
+                       onClick={async () => {
+                         if (pwdMode !== "current") {
+                           setPwdError("Por seguridad, cambia la contraseña usando la contraseña actual.");
+                           return;
+                         }
                         if (!newPwd.trim()) {
                           setPwdError("Ingresa una nueva contraseña");
                           return;
                         }
-                        updateUser({ password: newPwd.trim() });
+                         const response = await fetch("/api/auth/change-password", {
+                           method: "POST",
+                           headers: { "content-type": "application/json" },
+                           body: JSON.stringify({
+                             currentPassword: currentPwd,
+                             newPassword: newPwd.trim(),
+                           }),
+                         });
+                         const result = await response.json().catch(() => ({}));
+                         if (!response.ok) {
+                           setPwdError(result.message || "No se pudo cambiar la contraseña");
+                           return;
+                         }
                         setShowPasswordDialog(false);
                         setCurrentPwd("");
                         setNewPwd("");

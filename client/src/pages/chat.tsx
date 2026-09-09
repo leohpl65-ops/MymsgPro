@@ -541,6 +541,7 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const micPressRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -1458,12 +1459,30 @@ export default function ChatPage() {
               className="hidden"
               onChange={handleFileUpload}
             />
+            <input
+              type="file"
+              ref={imageInputRef}
+              className="hidden"
+              accept="image/*"
+              onChange={handleFileUpload}
+            />
+
+            <Button
+              size="icon"
+              variant="ghost"
+              className="text-muted-foreground shrink-0"
+              onClick={() => imageInputRef.current?.click()}
+              aria-label="Enviar imagen"
+            >
+              <ImageIcon className="h-6 w-6" />
+            </Button>
 
             <Button
               size="icon"
               variant="ghost"
               className="text-muted-foreground shrink-0"
               onClick={() => fileInputRef.current?.click()}
+              aria-label="Adjuntar archivo"
             >
               <Paperclip className="h-6 w-6" />
             </Button>
