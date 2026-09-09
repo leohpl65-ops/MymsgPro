@@ -34,6 +34,8 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Paperclip,
+  Download,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -618,23 +620,56 @@ export default function ChatPage() {
     setInputText("");
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadAttachment = async (file: Blob, fileName: string, mimeType: string) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+      reader.readAsDataURL(file);
+    });
+    const response = await fetch("/api/uploads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl, fileName, mimeType }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "No se pudo subir el archivo");
+    return result;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
 
     checkAutoAddContact();
-
     const isAudio = file.type.startsWith("audio/");
     const isImage = file.type.startsWith("image/");
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Url = reader.result as string;
-      if (isAudio) sendMessage(chat.id, "Mensaje de voz", "audio", base64Url);
-      else if (isImage)
-        sendMessage(chat.id, "Mensaje de imagen", "image", base64Url);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const result = await uploadAttachment(
+        file,
+        file.name,
+        file.type || "application/octet-stream",
+      );
+      const messageType = isAudio ? "audio" : isImage ? "image" : "file";
+      sendMessage(
+        chat.id,
+        isAudio ? "Mensaje de voz" : isImage ? "Mensaje de imagen" : file.name,
+        messageType,
+        result.url,
+        undefined,
+        result.fileName,
+        result.size,
+        result.mimeType,
+      );
+    } catch (error: any) {
+      const { toast } = await import("@/hooks/use-toast");
+      toast({
+        description: error.message || "No se pudo enviar el archivo",
+        variant: "destructive",
+      });
+    }
   };
 
   const startMicrophone = () => {
@@ -649,17 +684,27 @@ export default function ChatPage() {
           audioChunksRef.current.push(event.data);
         };
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           const audioBlob = new Blob(audioChunksRef.current, {
             type: "audio/wav",
           });
-          const reader = new FileReader();
-          reader.onloadend = () => {
+          try {
+            const result = await uploadAttachment(audioBlob, "mensaje-de-voz.wav", "audio/wav");
             checkAutoAddContact();
-            const base64Url = reader.result as string;
-            sendMessage(chat.id, "Mensaje de voz", "audio", base64Url);
-          };
-          reader.readAsDataURL(audioBlob);
+            sendMessage(
+              chat.id,
+              "Mensaje de voz",
+              "audio",
+              result.url,
+              undefined,
+              result.fileName,
+              result.size,
+              result.mimeType,
+            );
+          } catch {
+            const { toast } = await import("@/hooks/use-toast");
+            toast({ description: "No se pudo enviar el audio", variant: "destructive" });
+          }
           stream.getTracks().forEach((track) => track.stop());
         };
 
@@ -1120,6 +1165,32 @@ export default function ChatPage() {
                       />
                     )}
 
+                    {msg.type === "file" && msg.mediaUrl && (
+                      <a
+                        href={msg.mediaUrl}
+                        download={msg.fileName || "archivo"}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border px-3 py-2 mt-1 max-w-[260px]",
+                          isMe
+                            ? "border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+                            : "border-border text-foreground hover:bg-muted",
+                        )}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Download className="h-5 w-5 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">
+                            {msg.fileName || "Descargar archivo"}
+                          </span>
+                          {msg.fileSize ? (
+                            <span className="block text-[10px] opacity-70">
+                              {Math.ceil(msg.fileSize / 1024)} KB
+                            </span>
+                          ) : null}
+                        </span>
+                      </a>
+                    )}
+
                     <div className="flex items-center justify-end gap-1 mt-1">
                       <p
                         className={cn(
@@ -1385,7 +1456,6 @@ export default function ChatPage() {
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept="image/*"
               onChange={handleFileUpload}
             />
 
@@ -1395,7 +1465,7 @@ export default function ChatPage() {
               className="text-muted-foreground shrink-0"
               onClick={() => fileInputRef.current?.click()}
             >
-              <ImageIcon className="h-6 w-6" />
+              <Paperclip className="h-6 w-6" />
             </Button>
 
             <Button

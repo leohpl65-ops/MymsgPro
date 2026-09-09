@@ -1,0 +1,1 @@
+- [Server auth and uploads](server-auth-and-uploads.md) — validate credentials server-side and store attachment URLs, not Base64 blobs, in messages.

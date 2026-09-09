@@ -7,13 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, Lock } from "lucide-react";
 import { motion } from "framer-motion";
-import { ref, get } from "firebase/database";
-import { db } from "@/lib/firebase";
 import emailjs from "@emailjs/browser";
-
-const OWNER_PASSWORD = "12345670";
-const ADMIN_PASSWORD = "13245670";
-const MODERATOR_PASSWORD = "334466";
 
 export default function LoginPage() {
   const { login, currentUser } = useStore();
@@ -60,140 +54,28 @@ export default function LoginPage() {
       }
     }
     
-    // Check local storage for all users to find one that matches the name (case insensitive)
-    let foundUser = null;
-    let originalName = data.name;
-    let foundUserId = "";
-    
-    const keys = Object.keys(localStorage);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
-        try {
-          const u = JSON.parse(localStorage.getItem(keys[i]) || '');
-          // Check originalName (which is the permanent login name)
-          if (u.originalName?.toLowerCase() === data.name.toLowerCase() || 
-              (!u.originalName && u.name.toLowerCase() === data.name.toLowerCase())) {
-            foundUser = u;
-            foundUserId = u.id;
-            break;
-          }
-        } catch (e) {}
-      }
-    }
-    
-    // Check if it's admin or owner trying to login by name
-    if (data.name.toLowerCase() === 'theowner' && data.password === 'ImTheOwner123') {
-      await login("TheOwner", "12345670", "ImTheOwner123");
-      localStorage.removeItem("mymsg_login_attempts");
-      reset();
-      return;
-    }
-    
-    if (data.name.toLowerCase() === 'owner') {
-      if (!adminPassword) {
-        setLoginError("Se requiere código de administrador");
-        setShowAdminPassword(true);
-        return;
-      }
-      if (adminPassword !== ADMIN_PASSWORD) {
-        setLoginError("Código de administrador incorrecto");
-        setAdminPassword("");
-        return;
-      }
-      foundUserId = "12345670";
-      foundUser = { id: "12345670", password: "12345670", name: "Owner" }; // Dummy object to pass validation
-    } else if (data.name.toLowerCase() === 'moderador' || data.name.toLowerCase() === 'moderator') {
-      if (data.password !== MODERATOR_PASSWORD) {
-        setLoginError("Contraseña incorrecta para moderador");
-        return;
-      }
-      await login("Moderador", "Owner333", MODERATOR_PASSWORD);
-      localStorage.removeItem("mymsg_login_attempts");
-      reset();
-      return;
-    }
-    
-    if (!foundUser) {
-      // Try to see if this is an ID (fallback for old users)
-      for (let i = 0; i < keys.length; i++) {
-        if (keys[i] === `mymsg_user_${data.name}`) {
-          try {
-            foundUser = JSON.parse(localStorage.getItem(keys[i]) || '');
-            foundUserId = data.name;
-            break;
-          } catch (e) {}
-        }
-      }
-    }
-
-    // Si no se encontró localmente, buscar en Firebase (para que nunca se pierdan si borran datos)
-    if (!foundUser) {
-      try {
-        const { get, ref } = await import("firebase/database");
-        const { db } = await import("@/lib/firebase");
-        const usersSnap = await get(ref(db, `users`));
-        if (usersSnap.exists()) {
-          const users = usersSnap.val();
-          for (const uid in users) {
-            const u = users[uid];
-            if (u && ((u.originalName && u.originalName.toLowerCase() === data.name.toLowerCase()) || 
-                      (u.name && u.name.toLowerCase() === data.name.toLowerCase()) ||
-                      uid === data.name)) {
-              foundUser = u;
-              foundUserId = uid;
-              // Save to local storage for future
-              localStorage.setItem(`mymsg_user_${uid}`, JSON.stringify(u));
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("No se pudo buscar en Firebase", e);
-      }
-    }
-
-    if (!foundUser) {
-       setLoginError("Usuario no encontrado.");
-       return;
-    }
-
-    // Verify user password
-    if (foundUser.password !== data.password) {
-      const newAttempts = loginAttempts + 1;
-      setLoginAttempts(newAttempts);
-      localStorage.setItem("mymsg_login_attempts", JSON.stringify({ count: newAttempts, timestamp: Date.now() }));
-      setLoginError("Contraseña incorrecta");
-      return;
-    }
-    
-    // Check Firebase for user data to keep it fully synced across devices
     try {
-      const { get, ref } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
-      
-      const userSnap = await get(ref(db, `users/${foundUserId}`));
-      if (userSnap.exists()) {
-        const fbUser = userSnap.val();
-        // Update local with Firebase version just in case they changed avatar/name on another device
-        foundUser = { ...foundUser, ...fbUser };
-        localStorage.setItem(`mymsg_user_${foundUserId}`, JSON.stringify(foundUser));
-      }
-    } catch (e) {
-      console.warn("Could not sync user from Firebase during login", e);
-    }
-    
-    if (foundUser?.banned) {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "No se pudo iniciar sesión");
+      const foundUser = result.user;
+      localStorage.setItem(`mymsg_user_${foundUser.id}`, JSON.stringify(foundUser));
+
+      if (foundUser?.banned) {
       setLoginError("has sido baneado permanentemente de mymsgpro.");
       return;
-    }
-    
-    if (foundUser?.punishedUntil && foundUser.punishedUntil > Date.now()) {
-      setLoginError("esta cuenta ha sido castigada 3 dias por infringir nuestras reglas");
-      return;
-    }
+      }
+      if (foundUser?.punishedUntil && foundUser.punishedUntil > Date.now()) {
+        setLoginError("esta cuenta ha sido castigada 3 dias por infringir nuestras reglas");
+        return;
+      }
 
-    try {
-      await login(foundUser.name || data.name, foundUserId, data.password);
+      // The server has already validated the password; it never enters client state.
+      await login(foundUser.name || data.name, foundUser.id, "");
       localStorage.removeItem("mymsg_login_attempts");
       reset();
       setAdminPassword("");
@@ -213,97 +95,11 @@ export default function LoginPage() {
 
   const handleForgotPassword = () => {
     setForgotError("");
-    if (!forgotUsername.trim()) {
-      setForgotError("Ingresa tu nombre de usuario primero");
-      return;
-    }
-    
-    let foundUser = null;
-    const keys = Object.keys(localStorage);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
-        try {
-          const u = JSON.parse(localStorage.getItem(keys[i]) || '');
-          if (u.originalName?.toLowerCase() === forgotUsername.toLowerCase() || 
-              (!u.originalName && u.name.toLowerCase() === forgotUsername.toLowerCase())) {
-            foundUser = u;
-            break;
-          }
-        } catch (e) {}
-      }
-    }
-    
-    if (!foundUser) {
-      setForgotError("Usuario no encontrado");
-      return;
-    }
-    
-    if (!foundUser.googleLinked) {
-      setForgotError("Esta cuenta no tiene un Gmail vinculado");
-      return;
-    }
-    
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 dígitos numéricos
-    setSentCode(code);
-    setEnteredCode("");
-    
-    // EmailJS actual sending
-    const templateParams = {
-      email: foundUser.googleLinked,
-      passcode: code,
-      time: new Date(Date.now() + 15*60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-      app_url: window.location.origin
-    };
-
-    emailjs.send(
-      "service_ff94kiq", // Service ID
-      "template_9yuhjns", // Template ID
-      templateParams,
-      "0o7HK3NHxh9Nn_PPk" // Public Key
-    ).then(() => {
-      import("@/hooks/use-toast").then(({ toast }) => {
-        toast({ 
-          title: "Correo enviado", 
-          description: `Se ha enviado el código a tu correo vinculado.`, 
-          duration: 5000 
-        });
-      });
-    }).catch((error) => {
-      console.error("Error sending email:", error);
-      setForgotError("No se pudo enviar el correo, revisa tu conexión o configuración.");
-    });
+    setForgotError("La recuperación segura de contraseña aún no está disponible.");
   };
   
   const verifyForgotCode = async () => {
-    if (enteredCode === sentCode) {
-      // Find user again
-      let foundUser = null;
-      let foundUserId = "";
-      const keys = Object.keys(localStorage);
-      for (let i = 0; i < keys.length; i++) {
-        if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
-          try {
-            const u = JSON.parse(localStorage.getItem(keys[i]) || '');
-            if (u.originalName?.toLowerCase() === forgotUsername.toLowerCase() || 
-                (!u.originalName && u.name.toLowerCase() === forgotUsername.toLowerCase())) {
-              foundUser = u;
-              foundUserId = u.id;
-              break;
-            }
-          } catch (e) {}
-        }
-      }
-      
-      if (foundUser) {
-         await login(foundUser.name, foundUserId, foundUser.password);
-         import("@/hooks/use-toast").then(({ toast }) => {
-            toast({ title: "Verificado", description: "Código correcto. Por favor cambia tu contraseña adentro en tus ajustes." });
-         });
-         setShowForgotPwd(false);
-      }
-    } else {
-      setForgotError("Código incorrecto");
-    }
+    setForgotError("La recuperación segura de contraseña aún no está disponible.");
   };
 
   return (

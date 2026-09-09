@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { useStore } from "@/lib/store";
-import { generateUserAvatarSvg } from "@/lib/avatars";
 import { MobileLayout } from "@/components/mobile-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,65 +15,30 @@ export default function RegisterPage() {
 
   const [registerError, setRegisterError] = useState("");
 
-  const onSubmit = (data: { name: string; password: string }) => {
+  const onSubmit = async (data: { name: string; password: string }) => {
     setRegisterError("");
-    
-    if (data.name.toLowerCase() === 'leo33445' || data.name.toLowerCase() === 'theowner' || data.name.toLowerCase() === 'owner') {
-      setRegisterError("Este nombre está reservado y no puede ser usado.");
-      return;
-    }
-
-    // Check if name is already taken
-    let nameTaken = false;
-    const keys = Object.keys(localStorage);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i].startsWith('mymsg_user_') && !keys[i].includes('chats') && !keys[i].includes('reports')) {
-        try {
-          const u = JSON.parse(localStorage.getItem(keys[i]) || '');
-          if ((u.originalName || u.name).toLowerCase() === data.name.toLowerCase()) {
-            nameTaken = true;
-            break;
-          }
-        } catch (e) {}
-      }
-    }
-    
-    if (nameTaken) {
-      setRegisterError("Este nombre ya está en uso. Por favor, elige otro.");
-      return;
-    }
-
-    // Generate a numeric ID automatically
-    const autoId = Math.floor(10000000 + Math.random() * 90000000).toString();
-    
-    // Register the user in the "database" (localStorage) first
-    // Save the originalName to be used always for login
-    const user = { 
-      id: autoId, 
-      name: data.name, 
-      originalName: data.name,
-      password: data.password, 
-      avatar: generateUserAvatarSvg(data.name),
-      language: navigator.language.startsWith('es') ? 'es' : 'en'
-    };
-    localStorage.setItem(`mymsg_user_${autoId}`, JSON.stringify(user));
-    
-    // Also save to Firebase (strip undefined)
-    import('../lib/firebase').then(({ db }) => {
-      import('firebase/database').then(({ ref, set }) => {
-        set(ref(db, `users/${autoId}`), JSON.parse(JSON.stringify(user))).catch(console.error);
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...data,
+          language: navigator.language,
+        }),
       });
-    });
-    
-    // Then perform login
-    login(data.name, autoId, data.password);
-    
-    // Request notification permission
-    if ('Notification' in window && Notification.permission !== 'granted') {
-      Notification.requestPermission().catch(() => {});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "No se pudo crear la cuenta");
+
+      // The server creates the ID and stores only a password hash.
+      localStorage.setItem(`mymsg_user_${result.user.id}`, JSON.stringify(result.user));
+      await login(result.user.name, result.user.id, "");
+      if ("Notification" in window && Notification.permission !== "granted") {
+        Notification.requestPermission().catch(() => {});
+      }
+      setLocation("/contacts");
+    } catch (error: any) {
+      setRegisterError(error.message || "No se pudo crear la cuenta");
     }
-    
-    setLocation("/contacts");
   };
 
   return (

@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 
 export function serveStatic(app: Express) {
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
   const distPath = path.resolve(__dirname, "public");
   if (!fs.existsSync(distPath)) {
     throw new Error(
