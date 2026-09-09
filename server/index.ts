@@ -2,13 +2,27 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import session from "express-session";
 
 const app = express();
 const httpServer = createServer(app);
+// Replit terminates HTTPS at the proxy; trust it so secure session cookies
+// are correctly marked when the app runs in production.
+app.set("trust proxy", 1);
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET must be configured before starting the server");
+}
 
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
   }
 }
 
@@ -22,6 +36,19 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use(
+  session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  }),
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
