@@ -27,8 +27,7 @@ export interface User {
   name: string;
   originalName?: string;
   avatar?: string;
-  /** Passwords are validated only by the server and are never persisted here. */
-  password?: string;
+  password: string;
   language?: "es" | "en";
   status?: string; // added to match the login usage
   youtubeUrl?: string; // added youtube link
@@ -42,11 +41,8 @@ export interface Message {
   senderId: string;
   text: string;
   timestamp: number;
-  type: "text" | "image" | "audio" | "file" | "system";
+  type: "text" | "image" | "audio" | "system";
   mediaUrl?: string;
-  fileName?: string;
-  fileSize?: number;
-  mimeType?: string;
   read?: boolean;
   status: "sent" | "delivered" | "read";
   replyTo?: string;
@@ -103,12 +99,9 @@ interface StoreContextType {
   sendMessage: (
     chatId: string,
     text: string,
-    type?: "text" | "image" | "audio" | "file" | "system",
+    type?: "text" | "image" | "audio" | "system",
     mediaUrl?: string,
     replyTo?: string,
-    fileName?: string,
-    fileSize?: number,
-    mimeType?: string,
   ) => void;
   getChat: (chatId: string) => Chat | undefined;
   updateUser: (updates: Partial<User>) => void;
@@ -152,14 +145,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem("mymsg_user");
-    if (!saved) return null;
-    try {
-      const parsed = JSON.parse(saved);
-      const { password: _password, ...safeUser } = parsed;
-      return safeUser;
-    } catch {
-      return null;
-    }
+    return saved ? JSON.parse(saved) : null;
   });
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -327,19 +313,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Save user
   useEffect(() => {
     if (currentUser) {
-      fetch("/api/auth/me")
-        .then((response) => {
-          if (!response.ok) {
-            setCurrentUser(null);
-            setChats([]);
-            localStorage.removeItem("mymsg_user");
-          }
-        })
-        .catch(() => {
-          setCurrentUser(null);
-          setChats([]);
-          localStorage.removeItem("mymsg_user");
-        });
       localStorage.setItem("mymsg_user", JSON.stringify(currentUser));
       localStorage.setItem(
         `mymsg_user_${currentUser.id}`,
@@ -608,13 +581,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [chats.length, currentUser]);
 
   const login = async (name: string, id: string, password: string) => {
-    // Authentication is performed by /api/auth/login. This function only
-    // restores the already-sanitized profile returned by that endpoint.
-    const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+    // Check local first
+    let savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+
+    // Check Firebase
+    try {
+      const userSnap = await get(ref(db, `users/${id}`));
+      if (userSnap.exists()) {
+        const fbUser = userSnap.val();
+        localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(fbUser));
+        savedUserStr = JSON.stringify(fbUser);
+      }
+    } catch (e) {
+      console.error("Firebase fetch error", e);
+    }
+
+    if (!savedUserStr && id !== "12345670" && id !== "Owner333") {
+      throw new Error("Esta cuenta no existe. Prueba otra vez.");
+    }
 
     let finalUser: User = {
       id,
       name,
+      password,
       avatar: generateUserAvatarSvg(name),
       language:
         (localStorage.getItem(`mymsg_lang_${id}`) as any) ||
@@ -631,9 +620,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } else {
         finalUser.originalName = savedUser.name;
       }
+      // Update Firebase (strip undefined values)
+      set(ref(db, `users/${id}`), JSON.parse(JSON.stringify(finalUser))).catch(
+        console.error,
+      );
     }
 
-    delete finalUser.password;
     setCurrentUser(finalUser);
     localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(finalUser));
     localStorage.setItem("mymsg_user", JSON.stringify(finalUser));
@@ -686,13 +678,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyPassword = (id: string, password: string): boolean => {
-    // Password verification must never be performed against browser storage.
-    // Callers that need this capability should use a server endpoint.
-    return false;
+    let savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+
+    if (!savedUserStr) return true; // First login, accept any password
+    try {
+      const user = JSON.parse(savedUserStr);
+      return user.password === password;
+    } catch {
+      return false;
+    }
   };
 
   const logout = () => {
-    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setCurrentUser(null);
     setChats([]);
   };
@@ -852,12 +849,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const sendMessage = (
     chatId: string,
     text: string,
-    type: "text" | "image" | "audio" | "file" | "system" = "text",
+    type: "text" | "image" | "audio" | "system" = "text",
     mediaUrl?: string,
     replyTo?: string,
-    fileName?: string,
-    fileSize?: number,
-    mimeType?: string,
   ) => {
     if (!currentUser) return;
 
@@ -877,9 +871,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (mediaUrl) {
       newMessage.mediaUrl = mediaUrl;
     }
-    if (fileName) newMessage.fileName = fileName;
-    if (fileSize !== undefined) newMessage.fileSize = fileSize;
-    if (mimeType) newMessage.mimeType = mimeType;
 
     if (replyTo) {
       newMessage.replyTo = replyTo;
@@ -903,9 +894,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             const diffTime = Math.abs(
               currentDate.getTime() - lastDate.getTime(),
             );
-            const diffDays = Math.ceil(
-              diffTime / (1000 * 60 * 60 * 24),
-            );
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
             if (diffDays > 1) {
               newStreak = 1; // Reset to 1 because they are interacting today
@@ -924,9 +913,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 ? censoredText
                 : type === "image"
                   ? "📷 Imagen"
-                  : type === "audio"
-                    ? "🎤 Audio"
-                    : "📎 Archivo",
+                  : "🎤 Audio",
             lastMessageTime: newMessage.timestamp,
             streak: newStreak,
             lastInteractionDay: today,
@@ -991,10 +978,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 localStorage.getItem(offlineKey) || "[]",
               );
               offlineMsgs.push(newMessage);
-              localStorage.setItem(
-                offlineKey,
-                JSON.stringify(offlineMsgs),
-              );
+              localStorage.setItem(offlineKey, JSON.stringify(offlineMsgs));
             }
           }
 
@@ -1012,7 +996,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     ? getAllUsers().get(newMessage.senderId)?.originalName ||
                       getAllUsers().get(newMessage.senderId)?.name ||
                       newMessage.senderId
-                    : currentUser.name;
+                    : currentUser.name; // In DMs the name of the sender would actually be the peer's name if it was from them, but we only notify if it's NOT from us, so it's the contact's name
 
                 const displayName = c.type === "group" ? senderName : c.name;
 
@@ -1021,9 +1005,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     ? censoredText
                     : type === "image"
                       ? "Envió una imagen"
-                      : type === "audio"
-                        ? "Envió un audio"
-                        : "Envió un archivo";
+                      : "Envió un audio";
                 const notification = new Notification(
                   `¡Alguien te ha hablado!`,
                   {
@@ -1041,7 +1023,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
                 // Play a sound if possible
                 try {
-                  const audio = new Audio('/ringtone.mp3');
+                  const audio = new Audio('/ringtone.mp3'); 
                   audio.play().catch(e => console.log('Audio play failed:', e));
                 } catch(e) {}
               } catch (e) {
@@ -1079,9 +1061,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                       ? {
                           ...ch,
                           messages: [...ch.messages, aiMessage],
-                          lastMessage: isImage
-                            ? "Envió una imagen"
-                            : response,
+                          lastMessage: isImage ? "Envió una imagen" : response,
                           lastMessageTime: Date.now(),
                         }
                       : ch,
@@ -1119,11 +1099,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ) {
         try {
           const user = JSON.parse(localStorage.getItem(key) || "");
-          const { password: _password, ...safeUser } = user;
-          users.set(safeUser.id, safeUser);
-          if (user.password) {
-            localStorage.setItem(key, JSON.stringify(safeUser));
-          }
+          users.set(user.id, user);
         } catch (e) {
           // Ignore parse errors
         }
@@ -1134,8 +1110,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateUser = (updates: Partial<User>) => {
     if (!currentUser) return;
-    const { password: _password, ...safeUpdates } = updates;
-    const updatedUser = { ...currentUser, ...safeUpdates };
+    const updatedUser = { ...currentUser, ...updates };
     setCurrentUser(updatedUser);
     localStorage.setItem(
       `mymsg_user_${currentUser.id}`,
@@ -1147,7 +1122,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       import("@/lib/firebase").then(({ db }) => {
         update(
           ref(db, `users/${currentUser.id}`),
-          JSON.parse(JSON.stringify(safeUpdates)),
+          JSON.parse(JSON.stringify(updates)),
         ).catch((e) => console.error(e));
       });
     });
