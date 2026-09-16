@@ -978,4 +978,1857 @@ export async function registerRoutes(
       ) {
         return res.status(400).json({
           message:
-            "La nueva co
+            "La nueva contraseña debe tener al menos 8 caracteres",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(
+            req.session.userId!
+          );
+
+        if (
+          !user ||
+          !passwordMatches(
+            currentPassword,
+            user.password
+          )
+        ) {
+          return res.status(403).json({
+            message:
+              "La contraseña actual es incorrecta",
+          });
+        }
+
+        await writeFirebase(
+          `users/${req.session.userId}`,
+          "PATCH",
+          {
+            password:
+              hashPassword(
+                newPassword
+              ),
+          }
+        );
+
+        return res.status(204).end();
+      } catch (error) {
+        console.error(
+          "Password change error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo cambiar la contraseña",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * AUTH — UPDATE PROFILE
+   * ==========================================================
+   */
+
+  app.patch(
+    "/api/auth/me",
+    requireAuth,
+    async (req, res) => {
+      const updates: Record<
+        string,
+        unknown
+      > = {};
+
+      if (
+        typeof req.body?.name ===
+        "string"
+      ) {
+        const name = cleanText(
+          req.body.name,
+          40
+        );
+
+        if (
+          name.length < 2
+        ) {
+          return res.status(400).json({
+            message:
+              "Nombre inválido",
+          });
+        }
+
+        const users =
+          await readFirebaseUsers();
+
+        const taken =
+          Object.entries(users).some(
+            ([id, user]) => {
+              if (
+                id ===
+                req.session.userId
+              ) {
+                return false;
+              }
+
+              const candidate =
+                user.originalName ||
+                user.name ||
+                "";
+
+              return (
+                candidate.toLowerCase() ===
+                name.toLowerCase()
+              );
+            }
+          );
+
+        if (taken) {
+          return res.status(409).json({
+            message:
+              "Ese nombre ya está en uso",
+          });
+        }
+
+        updates.name = name;
+        updates.originalName = name;
+      }
+
+      if (
+        typeof req.body?.avatar ===
+        "string"
+      ) {
+        updates.avatar =
+          req.body.avatar.slice(
+            0,
+            500000
+          );
+      }
+
+      if (
+        req.body?.language === "es" ||
+        req.body?.language === "en"
+      ) {
+        updates.language =
+          req.body.language;
+      }
+
+      if (
+        typeof req.body?.youtubeUrl ===
+        "string"
+      ) {
+        const youtubeUrl =
+          req.body.youtubeUrl.trim();
+
+        if (
+          youtubeUrl.length > 500
+        ) {
+          return res.status(400).json({
+            message:
+              "URL de YouTube demasiado larga",
+          });
+        }
+
+        if (youtubeUrl) {
+          try {
+            const parsed =
+              new URL(youtubeUrl);
+
+            if (
+              parsed.protocol !==
+                "https:" &&
+              parsed.protocol !==
+                "http:"
+            ) {
+              return res.status(400).json({
+                message:
+                  "URL de YouTube inválida",
+              });
+            }
+          } catch {
+            return res.status(400).json({
+              message:
+                "URL de YouTube inválida",
+            });
+          }
+        }
+
+        updates.youtubeUrl =
+          youtubeUrl;
+      }
+
+      if (
+        Object.keys(updates).length === 0
+      ) {
+        return res.status(400).json({
+          message:
+            "No hay cambios válidos",
+        });
+      }
+
+      try {
+        await writeFirebase(
+          `users/${req.session.userId}`,
+          "PATCH",
+          updates
+        );
+
+        const user =
+          await readFirebaseUser(
+            req.session.userId!
+          );
+
+        return res.json({
+          user: publicUser(
+            user || {},
+            req.session.userId!
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Profile update error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo actualizar el perfil",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * USER LOOKUP
+   * ==========================================================
+   */
+
+  app.get(
+    "/api/users/:id",
+    requireAuth,
+    async (req, res) => {
+      const id = String(
+        req.params.id || ""
+      ).trim();
+
+      if (!validUserId(id)) {
+        return res.status(400).json({
+          message:
+            "ID de usuario inválido",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(id);
+
+        if (!user) {
+          return res.status(404).json({
+            message:
+              "Usuario no encontrado",
+          });
+        }
+
+        return res.json({
+          user: publicUser(
+            user,
+            id
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "User lookup error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo consultar el usuario",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/users",
+    requireAuth,
+    async (req, res) => {
+      const search = String(
+        req.query.search || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      if (search.length > 80) {
+        return res.status(400).json({
+          message:
+            "Búsqueda demasiado larga",
+        });
+      }
+
+      try {
+        const users =
+          await readFirebaseUsers();
+
+        const result =
+          Object.entries(users)
+            .filter(([id, user]) => {
+              if (!search) {
+                return true;
+              }
+
+              const name =
+                (
+                  user.name || ""
+                ).toLowerCase();
+
+              const originalName =
+                (
+                  user.originalName ||
+                  ""
+                ).toLowerCase();
+
+              return (
+                id.includes(search) ||
+                name.includes(search) ||
+                originalName.includes(
+                  search
+                )
+              );
+            })
+            .slice(0, 50)
+            .map(([id, user]) =>
+              publicUser(user, id)
+            );
+
+        return res.json({
+          users: result,
+        });
+      } catch (error) {
+        console.error(
+          "Users search error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudieron consultar los usuarios",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * DIRECT MESSAGES
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/messages",
+    requireAuth,
+    async (req, res) => {
+      const senderId =
+        req.session.userId!;
+
+      const recipientId = String(
+        req.body?.recipientId || ""
+      ).trim();
+
+      if (!validUserId(recipientId)) {
+        return res.status(400).json({
+          message:
+            "Destinatario inválido",
+        });
+      }
+
+      if (
+        recipientId === senderId
+      ) {
+        return res.status(400).json({
+          message:
+            "No puedes enviarte mensajes a ti mismo",
+        });
+      }
+
+      const text = cleanText(
+        req.body?.text,
+        5000
+      );
+
+      const type =
+        validMessageType(
+          req.body?.type
+        );
+
+      const mediaUrl =
+        typeof req.body?.mediaUrl ===
+        "string"
+          ? req.body.mediaUrl.slice(
+              0,
+              2000
+            )
+          : undefined;
+
+      if (
+        !text &&
+        !mediaUrl &&
+        type !== "system"
+      ) {
+        return res.status(400).json({
+          message:
+            "El mensaje no puede estar vacío",
+        });
+      }
+
+      try {
+        const recipient =
+          await readFirebaseUser(
+            recipientId
+          );
+
+        if (!recipient) {
+          return res.status(404).json({
+            message:
+              "Destinatario no encontrado",
+          });
+        }
+
+        if (recipient.banned) {
+          return res.status(403).json({
+            message:
+              "No puedes enviar mensajes a esta cuenta",
+          });
+        }
+
+        const id =
+          clientMessageId(
+            req.body?.clientMessageId
+          );
+
+        const message = {
+          id,
+          senderId,
+          recipientId,
+          text,
+          timestamp: Date.now(),
+          type,
+          mediaUrl,
+          replyTo:
+            typeof req.body?.replyTo ===
+            "string"
+              ? req.body.replyTo.slice(
+                  0,
+                  120
+                )
+              : undefined,
+          fileName:
+            typeof req.body?.fileName ===
+            "string"
+              ? req.body.fileName.slice(
+                  0,
+                  180
+                )
+              : undefined,
+          fileSize:
+            typeof req.body?.fileSize ===
+            "number" &&
+            req.body.fileSize >= 0 &&
+            req.body.fileSize <=
+              40 * 1024 * 1024
+              ? req.body.fileSize
+              : undefined,
+          mimeType:
+            typeof req.body?.mimeType ===
+            "string"
+              ? req.body.mimeType.slice(
+                  0,
+                  120
+                )
+              : undefined,
+        };
+
+        const queueResult =
+          await writeFirebase(
+            `offline_messages/${recipientId}`,
+            "POST",
+            message
+          );
+
+        const queueId =
+          queueResult &&
+          typeof queueResult ===
+            "object" &&
+          "name" in queueResult
+            ? String(
+                (
+                  queueResult as {
+                    name: string;
+                  }
+                ).name
+              )
+            : undefined;
+
+        /*
+         * Índice para poder localizar un mensaje
+         * pendiente posteriormente.
+         */
+        await writeFirebase(
+          `message_index/${id}`,
+          "PUT",
+          {
+            senderId,
+            recipientId,
+            queueId,
+            type: "direct",
+          }
+        );
+
+        return res.status(201).json({
+          message: publicMessage(
+            message
+          ),
+          queueId,
+        });
+      } catch (error) {
+        console.error(
+          "Send message error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo enviar el mensaje",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * MESSAGE INBOX
+   * ==========================================================
+   */
+
+  app.get(
+    "/api/messages/inbox",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const raw =
+          await readFirebase<
+            Record<string, any>
+          >(
+            `offline_messages/${req.session.userId}`
+          );
+
+        if (
+          !raw ||
+          typeof raw !== "object"
+        ) {
+          return res.json({
+            messages: [],
+          });
+        }
+
+        const messages =
+          Object.entries(raw)
+            .map(
+              ([queueId, message]) => ({
+                queueId,
+                message:
+                  publicMessage(
+                    message
+                  ),
+              })
+            )
+            .filter(
+              (entry) =>
+                entry.message !== null
+            )
+            .sort(
+              (a, b) =>
+                (a.message?.timestamp ||
+                  0) -
+                (b.message?.timestamp ||
+                  0)
+            )
+            .slice(-100);
+
+        return res.json({
+          messages,
+        });
+      } catch (error) {
+        console.error(
+          "Inbox error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo consultar la bandeja",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * MESSAGE INBOX ACK
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/messages/inbox/ack",
+    requireAuth,
+    async (req, res) => {
+      const ids =
+        Array.isArray(req.body?.ids)
+          ? req.body.ids
+          : [];
+
+      if (
+        ids.length === 0
+      ) {
+        return res.status(204).end();
+      }
+
+      if (
+        ids.length > 100
+      ) {
+        return res.status(400).json({
+          message:
+            "Demasiados mensajes",
+        });
+      }
+
+      try {
+        await Promise.all(
+          ids.map(async (queueId) => {
+            if (
+              typeof queueId !==
+                "string" ||
+              queueId.length > 200
+            ) {
+              return;
+            }
+
+            await writeFirebase(
+              `offline_messages/${req.session.userId}/${queueId}`,
+              "DELETE"
+            );
+          })
+        );
+
+        return res.status(204).end();
+      } catch (error) {
+        console.error(
+          "Inbox ACK error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudieron confirmar los mensajes",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * GROUPS
+   * ==========================================================
+   */
+
+  app.get(
+    "/api/groups",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const groups =
+          await readFirebase<
+            Record<string, FirebaseGroup>
+          >("groups");
+
+        const result =
+          Object.entries(groups || {})
+            .filter(
+              ([, group]) =>
+                normalizeParticipants(
+                  group.participants
+                ).includes(
+                  req.session.userId!
+                )
+            )
+            .map(([id, group]) =>
+              publicGroup(
+                group,
+                id
+              )
+            );
+
+        return res.json({
+          groups: result,
+        });
+      } catch (error) {
+        console.error(
+          "Groups list error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudieron consultar los grupos",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/groups",
+    requireAuth,
+    async (req, res) => {
+      const name = cleanText(
+        req.body?.name,
+        120
+      );
+
+      if (!name) {
+        return res.status(400).json({
+          message:
+            "El nombre del grupo es requerido",
+        });
+      }
+
+      try {
+        const id =
+          `group-${crypto.randomUUID()}`;
+
+        const group: FirebaseGroup = {
+          id,
+          name,
+          type: "group",
+          participants: [
+            req.session.userId!,
+          ],
+          messages: [],
+          lastMessage: "",
+          lastMessageTime:
+            Date.now(),
+          ownerId:
+            req.session.userId!,
+          userId:
+            req.session.userId!,
+        };
+
+        await writeFirebase(
+          `groups/${id}`,
+          "PUT",
+          group
+        );
+
+        return res.status(201).json({
+          group: publicGroup(
+            group,
+            id
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Create group error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo crear el grupo",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/groups/:id",
+    requireAuth,
+    async (req, res) => {
+      const id = cleanText(
+        req.params.id,
+        200
+      );
+
+      try {
+        const group =
+          await readFirebase<FirebaseGroup>(
+            `groups/${id}`
+          );
+
+        if (!group) {
+          return res.status(404).json({
+            message:
+              "Grupo no encontrado",
+          });
+        }
+
+        const participants =
+          normalizeParticipants(
+            group.participants
+          );
+
+        if (
+          !participants.includes(
+            req.session.userId!
+          )
+        ) {
+          return res.status(403).json({
+            message:
+              "No perteneces a este grupo",
+          });
+        }
+
+        return res.json({
+          group: publicGroup(
+            group,
+            id
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Get group error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo consultar el grupo",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * JOIN GROUP
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/groups/:id/join",
+    requireAuth,
+    async (req, res) => {
+      const id = cleanText(
+        req.params.id,
+        200
+      );
+
+      try {
+        const group =
+          await readFirebase<FirebaseGroup>(
+            `groups/${id}`
+          );
+
+        if (!group) {
+          return res.status(404).json({
+            message:
+              "Grupo no encontrado",
+          });
+        }
+
+        const user =
+          await readFirebaseUser(
+            req.session.userId!
+          );
+
+        if (!user) {
+          return res.status(401).json({
+            message:
+              "Usuario no encontrado",
+          });
+        }
+
+        if (user.banned) {
+          return res.status(403).json({
+            message:
+              "Esta cuenta está suspendida",
+          });
+        }
+
+        const participants =
+          normalizeParticipants(
+            group.participants
+          );
+
+        if (
+          !participants.includes(
+            req.session.userId!
+          )
+        ) {
+          participants.push(
+            req.session.userId!
+          );
+        }
+
+        group.participants =
+          participants;
+
+        await writeFirebase(
+          `groups/${id}`,
+          "PATCH",
+          {
+            participants,
+          }
+        );
+
+        return res.json({
+          group: publicGroup(
+            {
+              ...group,
+              participants,
+            },
+            id
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Join group error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo unir al grupo",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * UPDATE GROUP
+   * ==========================================================
+   */
+
+  app.patch(
+    "/api/groups/:id",
+    requireAuth,
+    async (req, res) => {
+      const id = cleanText(
+        req.params.id,
+        200
+      );
+
+      try {
+        const group =
+          await readFirebase<FirebaseGroup>(
+            `groups/${id}`
+          );
+
+        if (!group) {
+          return res.status(404).json({
+            message:
+              "Grupo no encontrado",
+          });
+        }
+
+        const participants =
+          normalizeParticipants(
+            group.participants
+          );
+
+        if (
+          !participants.includes(
+            req.session.userId!
+          )
+        ) {
+          return res.status(403).json({
+            message:
+              "No perteneces a este grupo",
+          });
+        }
+
+        const ownerId =
+          group.ownerId ||
+          group.userId ||
+          participants[0];
+
+        const admin =
+          await isAdmin(
+            req.session.userId!
+          );
+
+        if (
+          ownerId !==
+            req.session.userId &&
+          !admin
+        ) {
+          return res.status(403).json({
+            message:
+              "No tienes permiso para modificar este grupo",
+          });
+        }
+
+        const updates: Record<
+          string,
+          unknown
+        > = {};
+
+        if (
+          typeof req.body?.name ===
+          "string"
+        ) {
+          const name = cleanText(
+            req.body.name,
+            120
+          );
+
+          if (!name) {
+            return res.status(400).json({
+              message:
+                "Nombre de grupo inválido",
+            });
+          }
+
+          updates.name = name;
+        }
+
+        if (
+          typeof req.body?.avatar ===
+          "string"
+        ) {
+          updates.avatar =
+            req.body.avatar.slice(
+              0,
+              500000
+            );
+        }
+
+        if (
+          typeof req.body?.wallpaper ===
+          "string"
+        ) {
+          updates.wallpaper =
+            req.body.wallpaper.slice(
+              0,
+              1000000
+            );
+        }
+
+        if (
+          Object.keys(updates).length === 0
+        ) {
+          return res.status(400).json({
+            message:
+              "No hay cambios válidos",
+          });
+        }
+
+        await writeFirebase(
+          `groups/${id}`,
+          "PATCH",
+          updates
+        );
+
+        const updated =
+          await readFirebase<FirebaseGroup>(
+            `groups/${id}`
+          );
+
+        return res.json({
+          group: publicGroup(
+            updated || group,
+            id
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Update group error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo actualizar el grupo",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * GROUP MESSAGES
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/groups/:id/messages",
+    requireAuth,
+    async (req, res) => {
+      const groupId = cleanText(
+        req.params.id,
+        200
+      );
+
+      const text = cleanText(
+        req.body?.text,
+        5000
+      );
+
+      const type =
+        validMessageType(
+          req.body?.type
+        );
+
+      const mediaUrl =
+        typeof req.body?.mediaUrl ===
+        "string"
+          ? req.body.mediaUrl.slice(
+              0,
+              2000
+            )
+          : undefined;
+
+      if (
+        !text &&
+        !mediaUrl &&
+        type !== "system"
+      ) {
+        return res.status(400).json({
+          message:
+            "El mensaje no puede estar vacío",
+        });
+      }
+
+      try {
+        const group =
+          await readFirebase<FirebaseGroup>(
+            `groups/${groupId}`
+          );
+
+        if (!group) {
+          return res.status(404).json({
+            message:
+              "Grupo no encontrado",
+          });
+        }
+
+        const participants =
+          normalizeParticipants(
+            group.participants
+          );
+
+        if (
+          !participants.includes(
+            req.session.userId!
+          )
+        ) {
+          return res.status(403).json({
+            message:
+              "No perteneces a este grupo",
+          });
+        }
+
+        const id =
+          clientMessageId(
+            req.body?.clientMessageId
+          );
+
+        const message = {
+          id,
+          senderId:
+            req.session.userId!,
+          text,
+          timestamp: Date.now(),
+          type,
+          mediaUrl,
+          replyTo:
+            typeof req.body?.replyTo ===
+            "string"
+              ? req.body.replyTo.slice(
+                  0,
+                  120
+                )
+              : undefined,
+          fileName:
+            typeof req.body?.fileName ===
+            "string"
+              ? req.body.fileName.slice(
+                  0,
+                  180
+                )
+              : undefined,
+          fileSize:
+            typeof req.body?.fileSize ===
+              "number" &&
+            req.body.fileSize >= 0 &&
+            req.body.fileSize <=
+              40 * 1024 * 1024
+              ? req.body.fileSize
+              : undefined,
+          mimeType:
+            typeof req.body?.mimeType ===
+            "string"
+              ? req.body.mimeType.slice(
+                  0,
+                  120
+                )
+              : undefined,
+        };
+
+        const messages =
+          normalizeMessages(
+            group.messages
+          );
+
+        messages.push(message);
+
+        /*
+         * Evita que el grupo crezca
+         * indefinidamente.
+         */
+        const trimmedMessages =
+          messages.slice(-1000);
+
+        await writeFirebase(
+          `groups/${groupId}`,
+          "PATCH",
+          {
+            messages:
+              trimmedMessages,
+            lastMessage: text
+              ? text.slice(0, 5000)
+              : `[${type}]`,
+            lastMessageTime:
+              message.timestamp,
+          }
+        );
+
+        await writeFirebase(
+          `message_index/${id}`,
+          "PUT",
+          {
+            senderId:
+              req.session.userId!,
+            groupId,
+            type: "group",
+          }
+        );
+
+        return res.status(201).json({
+          message:
+            publicMessage(message),
+        });
+      } catch (error) {
+        console.error(
+          "Group message error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo enviar el mensaje",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * DELETE MESSAGE
+   * ==========================================================
+   */
+
+  app.delete(
+    "/api/messages/:id",
+    requireAuth,
+    async (req, res) => {
+      const messageId =
+        cleanText(
+          req.params.id,
+          120
+        );
+
+      try {
+        const index =
+          await readFirebase<{
+            senderId?: string;
+            recipientId?: string;
+            queueId?: string;
+            groupId?: string;
+            type?: string;
+          }>(
+            `message_index/${messageId}`
+          );
+
+        if (!index) {
+          return res.status(404).json({
+            message:
+              "Mensaje no encontrado en el servidor",
+          });
+        }
+
+        if (
+          index.senderId !==
+          req.session.userId
+        ) {
+          return res.status(403).json({
+            message:
+              "No puedes eliminar este mensaje",
+          });
+        }
+
+        /*
+         * Mensaje directo todavía pendiente.
+         */
+        if (
+          index.type === "direct" &&
+          index.recipientId &&
+          index.queueId
+        ) {
+          await writeFirebase(
+            `offline_messages/${index.recipientId}/${index.queueId}`,
+            "DELETE"
+          );
+
+          await writeFirebase(
+            `message_index/${messageId}`,
+            "DELETE"
+          );
+
+          return res.json({
+            deleted: true,
+            pending: true,
+          });
+        }
+
+        /*
+         * Mensaje de grupo.
+         */
+        if (index.groupId) {
+          const group =
+            await readFirebase<FirebaseGroup>(
+              `groups/${index.groupId}`
+            );
+
+          if (!group) {
+            return res.status(404).json({
+              message:
+                "Grupo no encontrado",
+            });
+          }
+
+          const participants =
+            normalizeParticipants(
+              group.participants
+            );
+
+          const admin =
+            await isAdmin(
+              req.session.userId!
+            );
+
+          if (
+            !participants.includes(
+              req.session.userId!
+            ) &&
+            !admin
+          ) {
+            return res.status(403).json({
+              message:
+                "No perteneces a este grupo",
+            });
+          }
+
+          const messages =
+            normalizeMessages(
+              group.messages
+            );
+
+          const updated =
+            messages.map(
+              (message: any) => {
+                if (
+                  message?.id !==
+                  messageId
+                ) {
+                  return message;
+                }
+
+                return {
+                  ...message,
+                  text: "",
+                  mediaUrl:
+                    undefined,
+                  deleted: true,
+                };
+              }
+            );
+
+          await writeFirebase(
+            `groups/${index.groupId}`,
+            "PATCH",
+            {
+              messages:
+                updated.slice(-1000),
+            }
+          );
+
+          await writeFirebase(
+            `message_index/${messageId}`,
+            "DELETE"
+          );
+
+          return res.json({
+            deleted: true,
+            pending: false,
+          });
+        }
+
+        return res.status(404).json({
+          message:
+            "Mensaje no disponible",
+        });
+      } catch (error) {
+        console.error(
+          "Delete message error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo eliminar el mensaje",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * ADMINS
+   * ==========================================================
+   */
+
+  app.get(
+    "/api/admins",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const admins =
+          await readFirebase<
+            Record<string, unknown>
+          >("admins");
+
+        const ids =
+          Object.entries(
+            admins || {}
+          )
+            .filter(
+              ([, value]) =>
+                value !== false &&
+                value !== null
+            )
+            .map(([id]) => id)
+            .filter(validUserId);
+
+        return res.json({
+          admins: ids,
+        });
+      } catch (error) {
+        console.error(
+          "Admins list error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudieron consultar los administradores",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/admins",
+    requireAdmin,
+    async (req, res) => {
+      const userId = String(
+        req.body?.userId || ""
+      ).trim();
+
+      if (!validUserId(userId)) {
+        return res.status(400).json({
+          message:
+            "ID de administrador inválido",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(
+            userId
+          );
+
+        if (!user) {
+          return res.status(404).json({
+            message:
+              "Usuario no encontrado",
+          });
+        }
+
+        await writeFirebase(
+          `admins/${userId}`,
+          "PUT",
+          true
+        );
+
+        return res.status(201).json({
+          success: true,
+          userId,
+        });
+      } catch (error) {
+        console.error(
+          "Add admin error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo agregar el administrador",
+        });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/admins/:id",
+    requireAdmin,
+    async (req, res) => {
+      const userId = String(
+        req.params.id || ""
+      ).trim();
+
+      if (!validUserId(userId)) {
+        return res.status(400).json({
+          message:
+            "ID inválido",
+        });
+      }
+
+      try {
+        await writeFirebase(
+          `admins/${userId}`,
+          "DELETE"
+        );
+
+        return res.status(204).end();
+      } catch (error) {
+        console.error(
+          "Remove admin error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo eliminar el administrador",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * ADMIN — BAN
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/admin/users/:id/ban",
+    requireAdmin,
+    async (req, res) => {
+      const userId = String(
+        req.params.id || ""
+      ).trim();
+
+      if (!validUserId(userId)) {
+        return res.status(400).json({
+          message:
+            "ID de usuario inválido",
+        });
+      }
+
+      if (
+        userId === req.session.userId
+      ) {
+        return res.status(400).json({
+          message:
+            "No puedes suspenderte a ti mismo",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(
+            userId
+          );
+
+        if (!user) {
+          return res.status(404).json({
+            message:
+              "Usuario no encontrado",
+          });
+        }
+
+        await writeFirebase(
+          `users/${userId}`,
+          "PATCH",
+          {
+            banned: true,
+          }
+        );
+
+        return res.json({
+          success: true,
+          userId,
+          banned: true,
+        });
+      } catch (error) {
+        console.error(
+          "Ban user error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo suspender al usuario",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/users/:id/unban",
+    requireAdmin,
+    async (req, res) => {
+      const userId = String(
+        req.params.id || ""
+      ).trim();
+
+      if (!validUserId(userId)) {
+        return res.status(400).json({
+          message:
+            "ID de usuario inválido",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(
+            userId
+          );
+
+        if (!user) {
+          return res.status(404).json({
+            message:
+              "Usuario no encontrado",
+          });
+        }
+
+        await writeFirebase(
+          `users/${userId}`,
+          "PATCH",
+          {
+            banned: false,
+          }
+        );
+
+        return res.json({
+          success: true,
+          userId,
+          banned: false,
+        });
+      } catch (error) {
+        console.error(
+          "Unban user error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo quitar la suspensión",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * UPLOAD API
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/uploads",
+    requireAuth,
+    async (req, res) => {
+      const dataUrl =
+        typeof req.body?.dataUrl ===
+        "string"
+          ? req.body.dataUrl
+          : "";
+
+      if (!dataUrl) {
+        return res.status(400).json({
+          message:
+            "Archivo no proporcionado",
+        });
+      }
+
+      /*
+       * data:image/png;base64,...
+       */
+      const match =
+        dataUrl.match(
+          /^data:([^;,]+);base64,(.+)$/s
+        );
+
+      if (!match) {
+        return res.status(400).json({
+          message:
+            "Formato de archivo inválido",
+        });
+      }
+
+      const mimeType = match[1]
+        .toLowerCase()
+        .trim();
+
+      const base64Data = match[2];
+
+      const allowedMimeTypes =
+        new Set([
+          "image/png",
+          "image/jpeg",
+          "image/gif",
+          "image/webp",
+          "image/avif",
+          "image/bmp",
+          "audio/mpeg",
+          "audio/wav",
+          "audio/ogg",
+          "audio/mp4",
+          "video/webm",
+          "video/mp4",
+          "application/pdf",
+          "text/plain",
+        ]);
+
+      if (
+        !allowedMimeTypes.has(
+          mimeType
+        )
+      ) {
+        return res.status(415).json({
+          message:
+            "Tipo de archivo no permitido",
+        });
+      }
+
+      let buffer: Buffer;
+
+      try {
+        buffer =
+          Buffer.from(
+            base64Data,
+            "base64"
+          );
+      } catch {
+        return res.status(400).json({
+          message:
+            "Archivo Base64 inválido",
+        });
+      }
+
+      const maxSize =
+        40 * 1024 * 1024;
+
+      if (
+        buffer.length === 0 ||
+        buffer.length > maxSize
+      ) {
+        return res.status(413).json({
+          message:
+            "El archivo supera el límite de 40 MB",
+        });
+      }
+
+      const extensionMap:
+        Record<string, string> = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/avif": ".avif",
+        "image/bmp": ".bmp",
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/ogg": ".ogg",
+        "audio/mp4": ".m4a",
+        "video/webm": ".webm",
+        "video/mp4": ".mp4",
+        "application/pdf": ".pdf",
+        "text/plain": ".txt",
+      };
+
+      const extension =
+        extensionMap[mimeType];
+
+      if (!extension) {
+        return res.status(415).json({
+          message:
+            "Extensión no permitida",
+        });
+      }
+
+      const filename =
+        `${crypto.randomUUID()}${extension}`;
+
+      const filePath =
+        path.join(
+          uploadDirectory,
+          filename
+        );
+
+      try {
+        await fs.writeFile(
+          filePath,
+          buffer,
+          {
+            flag: "wx",
+          }
+        );
+
+        return res.status(201).json({
+          url:
+            `/uploads/${filename}`,
+          filename,
+          mimeType,
+          size: buffer.length,
+        });
+      } catch (error) {
+        console.error(
+          "Upload write error:",
+          error
+        );
+
+        return res.status(500).json({
+          message:
+            "No se pudo guardar el archivo",
+        });
+      }
+    }
+  );
+
+  return httpServer;
+}
