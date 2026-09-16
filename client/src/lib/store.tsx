@@ -9,30 +9,26 @@ import { useLocation } from "wouter";
 import { nanoid } from "nanoid";
 import { censorMessage } from "./censor";
 import {
-  ref,
-  onValue,
-  set,
-  get,
-  child,
-  update,
-  push,
-  remove,
-} from "firebase/database";
-import { db } from "./firebase";
-import { generateUserAvatarSvg, generateGroupAvatarSvg } from "./avatars";
+  generateUserAvatarSvg,
+  generateGroupAvatarSvg,
+} from "./avatars";
 
 // --- Types ---
+
 export interface User {
   id: string;
   name: string;
   originalName?: string;
   avatar?: string;
-  /** Passwords are validated only by the server and are never persisted here. */
+  /**
+   * Kept only for type compatibility.
+   * Passwords must NEVER be stored in the client.
+   */
   password?: string;
   language?: "es" | "en";
-  status?: string; // added to match the login usage
-  youtubeUrl?: string; // added youtube link
-  googleLinked?: string; // added google link
+  status?: string;
+  youtubeUrl?: string;
+  googleLinked?: string;
   banned?: boolean;
   punishedUntil?: number;
 }
@@ -93,13 +89,30 @@ export interface Report {
 interface StoreContextType {
   currentUser: User | null;
   isOnline: boolean;
-  login: (name: string, id: string, password: string) => Promise<void>;
-  verifyPassword: (id: string, password: string) => boolean;
+
+  login: (
+    name: string,
+    id: string,
+    password: string,
+  ) => Promise<void>;
+
+  verifyPassword: (
+    id: string,
+    password: string,
+  ) => boolean;
+
   logout: () => void;
+
   chats: Chat[];
+
   createGroup: (name: string) => void;
   joinGroup: (groupId: string) => void;
-  addContact: (contactId: string, contactName: string) => boolean;
+
+  addContact: (
+    contactId: string,
+    contactName: string,
+  ) => boolean;
+
   sendMessage: (
     chatId: string,
     text: string,
@@ -110,35 +123,77 @@ interface StoreContextType {
     fileSize?: number,
     mimeType?: string,
   ) => void;
-  getChat: (chatId: string) => Chat | undefined;
-  updateUser: (updates: Partial<User>) => void;
-  updateGroup: (groupId: string, updates: Partial<Chat>) => void;
+
+  getChat: (
+    chatId: string,
+  ) => Chat | undefined;
+
+  updateUser: (
+    updates: Partial<User>,
+  ) => void;
+
+  updateGroup: (
+    groupId: string,
+    updates: Partial<Chat>,
+  ) => void;
+
   admins: string[];
-  addAdmin: (userId: string) => void;
-  removeAdmin: (userId: string) => void;
+
+  addAdmin: (
+    userId: string,
+  ) => void;
+
+  removeAdmin: (
+    userId: string,
+  ) => void;
+
   reports: Report[];
+
   reportEntity: (
     type: "Usuario" | "Grupo",
     targetId: string,
     targetName: string,
   ) => void;
-  setChatWallpaper: (chatId: string, url: string) => void;
-  getChatMessages: (chatId: string) => Message[];
+
+  setChatWallpaper: (
+    chatId: string,
+    url: string,
+  ) => void;
+
+  getChatMessages: (
+    chatId: string,
+  ) => Message[];
+
   getAllUsers: () => Map<string, User>;
-  forgetChat: (chatId: string) => void;
-  clearChatMessages: (chatId: string) => void;
+
+  forgetChat: (
+    chatId: string,
+  ) => void;
+
+  clearChatMessages: (
+    chatId: string,
+  ) => void;
+
   deleteMessage: (
     chatId: string,
     messageId: string,
     deleteForEveryone?: boolean,
   ) => void;
-  deleteReport: (reportId: string) => void;
-  markChatAsRead: (chatId: string) => void;
+
+  deleteReport: (
+    reportId: string,
+  ) => void;
+
+  markChatAsRead: (
+    chatId: string,
+  ) => void;
+
   replyToMessage: (
     chatId: string,
     messageId: string,
     replyText: string,
   ) => void;
+
   forwardMessage: (
     fromChatId: string,
     messageId: string,
@@ -146,713 +201,874 @@ interface StoreContextType {
   ) => void;
 }
 
-const StoreContext = createContext<StoreContextType | undefined>(undefined);
+const StoreContext =
+  createContext<StoreContextType | undefined>(undefined);
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [location, setLocation] = useLocation();
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem("mymsg_user");
-    if (!saved) return null;
-    try {
-      const parsed = JSON.parse(saved);
-      const { password: _password, ...safeUser } = parsed;
-      return safeUser;
-    } catch {
-      return null;
+// ---------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------
+
+function removeSensitiveUserFields(
+  user: Partial<User>,
+): User {
+  const {
+    password: _password,
+    googleLinked: _googleLinked,
+    ...safeUser
+  } = user;
+
+  return safeUser as User;
+}
+
+async function parseApiResponse(
+  response: Response,
+): Promise<any> {
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+        `Error del servidor (${response.status})`,
+    );
+  }
+
+  return data;
+}
+
+function saveSafeUser(user: User) {
+  const safeUser =
+    removeSensitiveUserFields(user);
+
+  localStorage.setItem(
+    `mymsg_user_${safeUser.id}`,
+    JSON.stringify(safeUser),
+  );
+
+  localStorage.setItem(
+    "mymsg_user",
+    JSON.stringify(safeUser),
+  );
+}
+
+function getStoredChats(
+  userId: string,
+): Chat[] {
+  try {
+    const saved = localStorage.getItem(
+      `mymsg_chats_${userId}`,
+    );
+
+    if (!saved) return [];
+
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return [];
     }
-  });
 
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+    return parsed;
+  } catch {
+    return [];
+  }
+}
 
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [admins, setAdmins] = useState<string[]>([]);
+function saveChats(
+  userId: string,
+  chats: Chat[],
+) {
+  localStorage.setItem(
+    `mymsg_chats_${userId}`,
+    JSON.stringify(chats),
+  );
+}
 
-  // Load admins
-  useEffect(() => {
-    import("firebase/database").then(({ ref, onValue }) => {
-      import("@/lib/firebase").then(({ db }) => {
-        const adminsRef = ref(db, "admins");
-        onValue(adminsRef, (snapshot) => {
-          if (snapshot.exists()) {
-            setAdmins(Object.keys(snapshot.val()));
-          } else {
-            setAdmins([]);
-          }
-        });
-      });
+// ---------------------------------------------------------
+// Provider
+// ---------------------------------------------------------
+
+export function StoreProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [, setLocation] = useLocation();
+
+  const [currentUser, setCurrentUser] =
+    useState<User | null>(() => {
+      const saved =
+        localStorage.getItem("mymsg_user");
+
+      if (!saved) return null;
+
+      try {
+        const parsed = JSON.parse(saved);
+
+        return removeSensitiveUserFields(
+          parsed,
+        );
+      } catch {
+        localStorage.removeItem(
+          "mymsg_user",
+        );
+        return null;
+      }
     });
-  }, []);
 
-  // Offline detection
+  const [isOnline, setIsOnline] =
+    useState<boolean>(
+      typeof navigator !== "undefined"
+        ? navigator.onLine
+        : true,
+    );
+
+  const [chats, setChats] =
+    useState<Chat[]>([]);
+
+  const [reports, setReports] =
+    useState<Report[]>([]);
+
+  const [admins, setAdmins] =
+    useState<string[]>([]);
+
+  // -------------------------------------------------------
+  // Online / Offline
+  // -------------------------------------------------------
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () =>
+      setIsOnline(true);
 
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    const handleOffline = () =>
+      setIsOnline(false);
+
+    window.addEventListener(
+      "online",
+      handleOnline,
+    );
+
+    window.addEventListener(
+      "offline",
+      handleOffline,
+    );
 
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(
+        "online",
+        handleOnline,
+      );
+
+      window.removeEventListener(
+        "offline",
+        handleOffline,
+      );
     };
   }, []);
 
-  // Load chats when user changes
+  // -------------------------------------------------------
+  // Restore chats
+  // -------------------------------------------------------
+
   useEffect(() => {
-    if (currentUser) {
-      const isFirstLogin = !localStorage.getItem(
-        `mymsg_chats_${currentUser.id}`,
-      );
-      const saved = localStorage.getItem(`mymsg_chats_${currentUser.id}`);
-      if (saved) {
-        const parsedChats: Chat[] = JSON.parse(saved);
-
-        // Sync group names and messages from "global" storage
-        const syncedChats = parsedChats.map((chat) => {
-          if (chat.type === "group") {
-            const globalGroupStr = localStorage.getItem(
-              `mymsg_global_group_${chat.id}`,
-            );
-            if (globalGroupStr) {
-              const globalGroup = JSON.parse(globalGroupStr);
-              return {
-                ...chat,
-                name: globalGroup.name,
-                messages: globalGroup.messages,
-                lastMessage: globalGroup.lastMessage,
-                lastMessageTime: globalGroup.lastMessageTime,
-                participants: globalGroup.participants,
-              };
-            }
-          } else if (chat.type === "direct") {
-            // Check for offline messages sent to this user
-            const contactId = chat.participants.find(
-              (p) => p !== currentUser.id,
-            );
-            if (contactId) {
-              const offlineMsgsKey = `mymsg_offline_msgs_${currentUser.id}_from_${contactId}`;
-              const offlineMsgsStr = localStorage.getItem(offlineMsgsKey);
-              if (offlineMsgsStr) {
-                const offlineMsgs = JSON.parse(offlineMsgsStr);
-                localStorage.removeItem(offlineMsgsKey);
-                return {
-                  ...chat,
-                  messages: [...chat.messages, ...offlineMsgs],
-                  lastMessage: offlineMsgs[offlineMsgs.length - 1].text,
-                  lastMessageTime:
-                    offlineMsgs[offlineMsgs.length - 1].timestamp,
-                };
-              }
-            }
-          }
-          return chat;
-        });
-
-        setChats(syncedChats);
-      } else {
-        setChats([]);
-        // Add MymsgAI on first login
-        if (isFirstLogin) {
-          setTimeout(() => {
-            setChats((prev) => {
-              const newChat: Chat = {
-                id: `dm-${[currentUser.id, "mymsgai"].sort().join("-")}`,
-                type: "direct",
-                name: "MymsgAI",
-                avatar: generateUserAvatarSvg("MymsgAI"),
-                participants: [currentUser.id, "mymsgai"],
-                messages: [],
-                lastMessageTime: Date.now(),
-                userId: currentUser.id,
-              };
-              return [newChat, ...prev];
-            });
-          }, 0);
-        }
-      }
-
-      const savedReports = localStorage.getItem(
-        `mymsg_reports_${currentUser.id}`,
-      );
-      if (savedReports) {
-        setReports(JSON.parse(savedReports));
-      }
+    if (!currentUser) {
+      setChats([]);
+      return;
     }
+
+    const savedChats =
+      getStoredChats(currentUser.id);
+
+    if (savedChats.length > 0) {
+      setChats(savedChats);
+      return;
+    }
+
+    const aiChat: Chat = {
+      id: `dm-${[
+        currentUser.id,
+        "mymsgai",
+      ]
+        .sort()
+        .join("-")}`,
+
+      type: "direct",
+
+      name: "MymsgAI",
+
+      avatar:
+        generateUserAvatarSvg(
+          "MymsgAI",
+        ),
+
+      participants: [
+        currentUser.id,
+        "mymsgai",
+      ],
+
+      messages: [],
+
+      lastMessageTime:
+        Date.now(),
+
+      userId:
+        currentUser.id,
+    };
+
+    setChats([aiChat]);
   }, [currentUser]);
 
-  // Save chats when they change
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(
-        `mymsg_chats_${currentUser.id}`,
-        JSON.stringify(chats),
-      );
+  // -------------------------------------------------------
+  // Save chats locally
+  // -------------------------------------------------------
 
-      // Asegurarse de que todos los mensajes que acabamos de guardar en local también estén
-      // sincronizados en Firebase para grupos, por si acaso (redundancia de seguridad)
-      chats.forEach((chat) => {
-        if (
-          chat.type === "group" &&
-          chat.participants.includes(currentUser.id)
-        ) {
-          const globalGroupStr = localStorage.getItem(
-            `mymsg_global_group_${chat.id}`,
-          );
-          if (globalGroupStr) {
-            import("firebase/database").then(({ ref, set }) => {
-              import("@/lib/firebase").then(({ db }) => {
-                // Solo guardamos si nosotros fuimos el último en enviar mensaje o han pasado 5 mins
-                // para evitar sobreescribir con versiones antiguas
-                const groupObj = JSON.parse(globalGroupStr);
-                set(ref(db, `groups/${chat.id}`), groupObj).catch(() => {});
-              });
-            });
-          }
-        }
-      });
-    }
-  }, [chats, currentUser]);
-
-  // Save reports when they change
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(
-        `mymsg_reports_${currentUser.id}`,
-        JSON.stringify(reports),
-      );
-    }
-  }, [reports, currentUser]);
-
-  // Save user
-  useEffect(() => {
-    if (currentUser) {
-      fetch("/api/auth/me")
-        .then((response) => {
-          if (!response.ok) {
-            setCurrentUser(null);
-            setChats([]);
-            localStorage.removeItem("mymsg_user");
-          }
-        })
-        .catch(() => {
-          setCurrentUser(null);
-          setChats([]);
-          localStorage.removeItem("mymsg_user");
-        });
-      localStorage.setItem("mymsg_user", JSON.stringify(currentUser));
-      localStorage.setItem(
-        `mymsg_user_${currentUser.id}`,
-        JSON.stringify(currentUser),
-      );
-    } else {
-      localStorage.removeItem("mymsg_user");
-    }
-  }, [currentUser]);
-
-  // Periodic check for new offline messages and auto-add contacts
   useEffect(() => {
     if (!currentUser) return;
 
-    let isSubscribed = true;
-
-    // Use onValue listener instead of polling to avoid race conditions and duplicates
-    const fbOfflineRef = ref(db, `offline_messages/${currentUser.id}`);
-
-    const unsubscribe = onValue(
-      fbOfflineRef,
-      (snapshot) => {
-        if (!isSubscribed || !snapshot.exists()) return;
-
-        const sendersData = snapshot.val();
-
-        setChats((prevChats) => {
-          let newChats = [...prevChats];
-          let changed = false;
-
-          Object.keys(sendersData).forEach((senderKey) => {
-            // senderKey is like "from_123456"
-            const senderId = senderKey.replace("from_", "");
-            const messagesObj = sendersData[senderKey];
-            const fbMsgs: Message[] = Object.values(messagesObj);
-
-            if (fbMsgs.length > 0) {
-              const chatId = `dm-${[currentUser.id, senderId].sort().join("-")}`;
-              const chatIndex = newChats.findIndex((c) => c.id === chatId);
-
-              // Add to existing chat
-              if (chatIndex >= 0) {
-                // Make sure we don't add duplicates by checking msg IDs
-                const existingMsgIds = new Set(
-                  newChats[chatIndex].messages.map((m) => m.id),
-                );
-                const newMsgs = fbMsgs.filter((m) => !existingMsgIds.has(m.id));
-
-                if (newMsgs.length > 0) {
-                  // Mantenemos los mensajes anteriores y agregamos los nuevos, filtrando duplicados exactos
-                  const allMessages = [...newChats[chatIndex].messages];
-
-                  newMsgs.forEach((newMsg) => {
-                    const isDuplicate = allMessages.some(
-                      (m) =>
-                        m.id === newMsg.id ||
-                        (m.text === newMsg.text &&
-                          m.timestamp === newMsg.timestamp &&
-                          m.senderId === newMsg.senderId) ||
-                        (m.text === newMsg.text &&
-                          m.senderId === newMsg.senderId &&
-                          Math.abs(m.timestamp - newMsg.timestamp) < 5000),
-                    );
-
-                    if (!isDuplicate) {
-                      allMessages.push(newMsg);
-                    }
-                  });
-
-                  // Asegurarse de ordenar por timestamp por si acaso
-                  allMessages.sort((a, b) => a.timestamp - b.timestamp);
-
-                  newChats[chatIndex] = {
-                    ...newChats[chatIndex],
-                    messages: allMessages,
-                    lastMessage:
-                      newMsgs[newMsgs.length - 1].type === "text"
-                        ? newMsgs[newMsgs.length - 1].text
-                        : "Archivo multimedia",
-                    lastMessageTime: newMsgs[newMsgs.length - 1].timestamp,
-                  };
-                  changed = true;
-                }
-              } else {
-                // Auto-create chat for unknown contact from Firebase
-                let senderName = senderId;
-
-                // First attempt: try to get the name from localStorage
-                const senderUserStr = localStorage.getItem(
-                  `mymsg_user_${senderId}`,
-                );
-                if (senderUserStr) {
-                  try {
-                    const parsedUser = JSON.parse(senderUserStr);
-                    senderName =
-                      parsedUser.originalName || parsedUser.name || senderId;
-                  } catch (e) {}
-                }
-
-                // Always try to fetch from Firebase to ensure we have the latest name
-                get(ref(db, `users/${senderId}`))
-                  .then((uSnap) => {
-                    if (uSnap.exists()) {
-                      const uData = uSnap.val();
-                      const finalName =
-                        uData.originalName || uData.name || senderId;
-
-                      // Update the chat name in state
-                      setChats((curr) =>
-                        curr.map((c) =>
-                          c.id === chatId ? { ...c, name: finalName } : c,
-                        ),
-                      );
-
-                      // Save to local storage for next time
-                      localStorage.setItem(
-                        `mymsg_user_${senderId}`,
-                        JSON.stringify(uData),
-                      );
-
-                      // Add them to contacts automatically so they appear in the new chat list too
-                      const existingContacts = JSON.parse(
-                        localStorage.getItem(
-                          `mymsg_contacts_${currentUser.id}`,
-                        ) || "[]",
-                      );
-                      if (!existingContacts.includes(senderId)) {
-                        existingContacts.push(senderId);
-                        localStorage.setItem(
-                          `mymsg_contacts_${currentUser.id}`,
-                          JSON.stringify(existingContacts),
-                        );
-                      }
-                    }
-                  })
-                  .catch((e) => console.warn("Error fetching user", e.message));
-
-                // Asegurarse de ordenar los mensajes
-                const sortedMsgs = [...fbMsgs].sort(
-                  (a, b) => a.timestamp - b.timestamp,
-                );
-
-                const newChat: Chat = {
-                  id: chatId,
-                  type: "direct",
-                  name: senderName,
-                  avatar: generateUserAvatarSvg(senderId),
-                  participants: [currentUser.id, senderId],
-                  messages: sortedMsgs,
-                  lastMessage:
-                    sortedMsgs[sortedMsgs.length - 1].type === "text"
-                      ? sortedMsgs[sortedMsgs.length - 1].text
-                      : "Archivo multimedia",
-                  lastMessageTime: sortedMsgs[sortedMsgs.length - 1].timestamp,
-                  userId: currentUser.id,
-                };
-                newChats = [newChat, ...newChats];
-                changed = true;
-              }
-            }
-          });
-
-          if (changed) {
-            // Delete the processed messages from Firebase to not read them again
-            // Doing it inside the state setter ensures we only delete if we successfully processed them
-            setTimeout(() => {
-              if (isSubscribed) {
-                remove(fbOfflineRef).catch((e) =>
-                  console.warn("Error removing msgs", e.message),
-                );
-              }
-            }, 100);
-            return newChats;
-          }
-          return prevChats;
-        });
-      },
-      (error) => {
-        console.warn("Firebase offline queue read error:", error.message);
-      },
+    saveChats(
+      currentUser.id,
+      chats,
     );
+  }, [chats, currentUser]);
 
-    // Check Groups interval (polling is okay for this since it reads local storage)
-    const checkGroups = () => {
-      setChats((prevChats) => {
-        let newChats = [...prevChats];
-        let changed = false;
+  // -------------------------------------------------------
+  // Reports
+  // -------------------------------------------------------
 
-        const keys = Object.keys(localStorage);
-        keys.forEach((key) => {
-          if (key.startsWith("mymsg_global_group_")) {
-            const globalGroup = JSON.parse(localStorage.getItem(key) || "{}");
-            if (
-              globalGroup &&
-              globalGroup.participants &&
-              globalGroup.participants.includes(currentUser.id)
-            ) {
-              const chatIndex = newChats.findIndex(
-                (c) => c.id === globalGroup.id,
-              );
-              if (chatIndex >= 0) {
-                if (
-                  newChats[chatIndex].messages.length <
-                  (globalGroup.messages || []).length
-                ) {
-                  newChats[chatIndex] = {
-                    ...newChats[chatIndex],
-                    name: globalGroup.name,
-                    messages: globalGroup.messages || [],
-                    lastMessage: globalGroup.lastMessage,
-                    lastMessageTime: globalGroup.lastMessageTime,
-                    participants: globalGroup.participants,
-                  };
-                  changed = true;
-                }
-              } else {
-                // We were added to a group!
-                newChats = [
-                  { ...globalGroup, userId: currentUser.id },
-                  ...newChats,
-                ];
-                changed = true;
-              }
-            }
-          }
-        });
+  useEffect(() => {
+    if (!currentUser) return;
 
-        if (changed) {
-          return newChats;
+    try {
+      const saved =
+        localStorage.getItem(
+          `mymsg_reports_${currentUser.id}`,
+        );
+
+      if (saved) {
+        const parsed =
+          JSON.parse(saved);
+
+        setReports(
+          Array.isArray(parsed)
+            ? parsed
+            : [],
+        );
+      } else {
+        setReports([]);
+      }
+    } catch {
+      setReports([]);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    localStorage.setItem(
+      `mymsg_reports_${currentUser.id}`,
+      JSON.stringify(reports),
+    );
+  }, [reports, currentUser]);
+
+  // -------------------------------------------------------
+  // Validate existing session
+  // -------------------------------------------------------
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let cancelled = false;
+
+    fetch("/api/auth/me", {
+      method: "GET",
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (cancelled) return;
+
+        if (!response.ok) {
+          setCurrentUser(null);
+          setChats([]);
+
+          localStorage.removeItem(
+            "mymsg_user",
+          );
+
+          return;
         }
-        return prevChats;
-      });
-    };
 
-    const interval = setInterval(checkGroups, 2000);
+        const data =
+          await response
+            .json()
+            .catch(() => null);
 
-    // Sync groups from Firebase to local storage
-    const groupInterval = setInterval(() => {
-      import("firebase/database").then(({ ref, get }) => {
-        import("@/lib/firebase").then(({ db }) => {
-          chats.forEach((chat) => {
-            if (chat.type === "group") {
-              get(ref(db, `groups/${chat.id}`))
-                .then((snap) => {
-                  if (snap.exists()) {
-                    const fbGroup = snap.val();
-                    if (!fbGroup.messages) fbGroup.messages = [];
-                    localStorage.setItem(
-                      `mymsg_global_group_${chat.id}`,
-                      JSON.stringify(fbGroup),
-                    );
-                  }
-                })
-                .catch(() => {});
-            }
-          });
-        });
+        if (
+          data?.user &&
+          !cancelled
+        ) {
+          const safeUser =
+            removeSensitiveUserFields(
+              data.user,
+            );
+
+          setCurrentUser(
+            safeUser,
+          );
+
+          saveSafeUser(
+            safeUser,
+          );
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+
+        // Don't destroy a local session just
+        // because the network is temporarily down.
+        if (!navigator.onLine) return;
+
+        setCurrentUser(null);
+        setChats([]);
+
+        localStorage.removeItem(
+          "mymsg_user",
+        );
       });
-    }, 3000);
 
     return () => {
-      clearInterval(interval);
-      clearInterval(groupInterval);
-      unsubscribe(); // Clean up listener
+      cancelled = true;
     };
-  }, [chats.length, currentUser]);
+  }, []);
 
-  const login = async (name: string, id: string, password: string) => {
-    // Authentication is performed by /api/auth/login. This function only
-    // restores the already-sanitized profile returned by that endpoint.
-    const savedUserStr = localStorage.getItem(`mymsg_user_${id}`);
+  // -------------------------------------------------------
+  // Load admins
+  // -------------------------------------------------------
 
-    let finalUser: User = {
-      id,
-      name,
-      avatar: generateUserAvatarSvg(name),
-      language:
-        (localStorage.getItem(`mymsg_lang_${id}`) as any) ||
-        (navigator.language.startsWith("es") ? "es" : "en"),
-      status: "offline",
-    };
-
-    if (savedUserStr) {
-      const savedUser = JSON.parse(savedUserStr);
-      finalUser = { ...savedUser, name, status: "offline" };
-      // Preserve the original name if it exists, otherwise set it
-      if (savedUser.originalName) {
-        finalUser.originalName = savedUser.originalName;
-      } else {
-        finalUser.originalName = savedUser.name;
-      }
+  useEffect(() => {
+    if (!currentUser) {
+      setAdmins([]);
+      return;
     }
 
-    delete finalUser.password;
-    setCurrentUser(finalUser);
-    localStorage.setItem(`mymsg_user_${id}`, JSON.stringify(finalUser));
-    localStorage.setItem("mymsg_user", JSON.stringify(finalUser));
+    let cancelled = false;
 
-    // Restore chats from localStorage for this specific user ID
-    const savedChats = localStorage.getItem(`mymsg_chats_${id}`);
-    if (savedChats) {
-      const parsedChats: Chat[] = JSON.parse(savedChats);
+    fetch("/api/admins", {
+      method: "GET",
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
 
-      // Sync group names and messages from "global" storage
-      const syncedChats = parsedChats.map((chat) => {
-        if (chat.type === "group") {
-          const globalGroupStr = localStorage.getItem(
-            `mymsg_global_group_${chat.id}`,
+        const data =
+          await response
+            .json()
+            .catch(() => ({}));
+
+        if (cancelled) return;
+
+        if (Array.isArray(data?.admins)) {
+          setAdmins(
+            data.admins.map(
+              (id: unknown) =>
+                String(id),
+            ),
           );
-          if (globalGroupStr) {
-            const globalGroup = JSON.parse(globalGroupStr);
-            return {
-              ...chat,
-              name: globalGroup.name,
-              messages: globalGroup.messages,
-              lastMessage: globalGroup.lastMessage,
-              lastMessageTime: globalGroup.lastMessageTime,
-              participants: globalGroup.participants,
-            };
-          }
-        } else if (chat.type === "direct") {
-          // Check for offline messages sent to this user
-          const contactId = chat.participants.find((p) => p !== id);
-          if (contactId) {
-            const offlineMsgsKey = `mymsg_offline_msgs_${id}_from_${contactId}`;
-            const offlineMsgsStr = localStorage.getItem(offlineMsgsKey);
-            if (offlineMsgsStr) {
-              const offlineMsgs = JSON.parse(offlineMsgsStr);
-              localStorage.removeItem(offlineMsgsKey);
-              return {
-                ...chat,
-                messages: [...chat.messages, ...offlineMsgs],
-                lastMessage: offlineMsgs[offlineMsgs.length - 1].text,
-                lastMessageTime: offlineMsgs[offlineMsgs.length - 1].timestamp,
-              };
-            }
-          }
         }
-        return chat;
-      });
+      })
+      .catch(() => {});
 
-      setChats(syncedChats);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  // -------------------------------------------------------
+  // Login
+  // -------------------------------------------------------
+
+  const login = async (
+    name: string,
+    _id: string,
+    password: string,
+  ) => {
+    const cleanName =
+      name.trim();
+
+    if (!cleanName) {
+      throw new Error(
+        "El nombre de usuario es requerido",
+      );
     }
+
+    if (!password) {
+      throw new Error(
+        "La contraseña es requerida",
+      );
+    }
+
+    const response =
+      await fetch(
+        "/api/auth/login",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          credentials: "include",
+
+          body: JSON.stringify({
+            name: cleanName,
+            password,
+          }),
+        },
+      );
+
+    const data =
+      await parseApiResponse(
+        response,
+      );
+
+    if (!data?.user?.id) {
+      throw new Error(
+        "El servidor no devolvió un usuario válido",
+      );
+    }
+
+    const user =
+      removeSensitiveUserFields(
+        data.user,
+      );
+
+    setCurrentUser(user);
+
+    saveSafeUser(user);
+
+    const restored =
+      getStoredChats(user.id);
+
+    setChats(restored);
+
+    /*
+     * IMPORTANT:
+     * The supplied ID is deliberately ignored.
+     * The authenticated ID comes from the server.
+     */
   };
 
-  const verifyPassword = (id: string, password: string): boolean => {
-    // Password verification must never be performed against browser storage.
-    // Callers that need this capability should use a server endpoint.
+  // -------------------------------------------------------
+  // Password verification
+  // -------------------------------------------------------
+
+  const verifyPassword = (
+    _id: string,
+    _password: string,
+  ): boolean => {
+    /*
+     * Password verification must never happen
+     * against localStorage or client-side data.
+     *
+     * Existing callers should migrate to a
+     * server endpoint.
+     */
     return false;
   };
 
+  // -------------------------------------------------------
+  // Logout
+  // -------------------------------------------------------
+
   const logout = () => {
-    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {});
+
     setCurrentUser(null);
     setChats([]);
-  };
+    setReports([]);
+    setAdmins([]);
 
-  const createGroup = async (name: string) => {
-    if (!currentUser) return;
-    const groupId = `group-${nanoid()}`;
-    const newGroup: Chat = {
-      id: groupId,
-      type: "group",
-      name,
-      avatar: generateGroupAvatarSvg(name),
-      participants: [currentUser.id],
-      messages: [],
-      lastMessage: "Grupo creado",
-      lastMessageTime: Date.now(),
-      userId: currentUser.id,
-    };
-
-    // Save to global storage for sync
-    localStorage.setItem(
-      `mymsg_global_group_${groupId}`,
-      JSON.stringify(newGroup),
+    localStorage.removeItem(
+      "mymsg_user",
     );
-
-    // Update state immediately to show to user
-    setChats((prev) => {
-      // Check if group already exists to prevent duplicates
-      if (prev.some(c => c.id === groupId)) return prev;
-      return [newGroup, ...prev];
-    });
-
-    // Try to create it in Firebase for global access
-    try {
-      const { set, ref } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
-      // Strip undefined
-      const safeGroup = JSON.parse(JSON.stringify(newGroup));
-      await set(ref(db, `groups/${groupId}`), safeGroup);
-    } catch (e) {
-      console.error("Error creating group in Firebase", e);
-    }
   };
 
-  const joinGroup = async (groupId: string) => {
+  // -------------------------------------------------------
+  // Create group
+  // -------------------------------------------------------
+
+  const createGroup = (
+    name: string,
+  ) => {
     if (!currentUser) return;
-    const fullGroupId = groupId.startsWith("group-")
-      ? groupId
-      : `group-${groupId}`;
 
-    try {
-      const { get, ref, set } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
+    const cleanName =
+      name.trim().slice(0, 100);
 
-      const groupSnap = await get(ref(db, `groups/${fullGroupId}`));
+    if (!cleanName) return;
 
-      if (groupSnap.exists()) {
-        const globalGroup = groupSnap.val();
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            "/api/groups",
+            {
+              method: "POST",
 
-        if (!globalGroup.participants.includes(currentUser.id)) {
-          globalGroup.participants.push(currentUser.id);
-          // Update Firebase
-          await set(ref(db, `groups/${fullGroupId}`), globalGroup);
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              credentials: "include",
+
+              body: JSON.stringify({
+                name: cleanName,
+              }),
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        if (!data?.group) {
+          throw new Error(
+            "El servidor no devolvió el grupo",
+          );
         }
 
-        // Save to local storage for offline access
-        localStorage.setItem(
-          `mymsg_global_group_${fullGroupId}`,
-          JSON.stringify(globalGroup),
-        );
+        const group =
+          data.group as Chat;
 
         setChats((prev) => {
-          const existing = prev.find((c) => c.id === fullGroupId);
-          if (existing) return prev;
-          return [globalGroup, ...prev];
+          if (
+            prev.some(
+              (c) =>
+                c.id === group.id,
+            )
+          ) {
+            return prev;
+          }
+
+          return [
+            group,
+            ...prev,
+          ];
         });
-        return;
+      } catch (error) {
+        console.error(
+          "Create group error:",
+          error,
+        );
       }
-    } catch (e) {
-      console.error("Firebase join group error", e);
-    }
+    })();
   };
 
-  const addContact = (contactId: string, contactName: string): boolean => {
-    if (!currentUser) return false;
+  // -------------------------------------------------------
+  // Join group
+  // -------------------------------------------------------
 
-    // Special case for MymsgAI - always allow
-    if (contactId === "mymsgai" || contactId.toLowerCase() === "ia") {
-      const existing = chats.find(
-        (c) =>
-          c.type === "direct" &&
-          c.participants.includes("mymsgai") &&
-          c.participants.includes(currentUser.id),
-      );
-      if (existing) return false;
+  const joinGroup = (
+    groupId: string,
+  ) => {
+    if (!currentUser) return;
+
+    const cleanId =
+      groupId
+        .trim()
+        .replace(
+          /^group-/,
+          "",
+        );
+
+    if (!cleanId) return;
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            `/api/groups/${encodeURIComponent(
+              cleanId,
+            )}/join`,
+            {
+              method: "POST",
+
+              credentials: "include",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        if (!data?.group) {
+          throw new Error(
+            "El servidor no devolvió el grupo",
+          );
+        }
+
+        const group =
+          data.group as Chat;
+
+        setChats((prev) => {
+          const index =
+            prev.findIndex(
+              (c) =>
+                c.id === group.id,
+            );
+
+          if (index >= 0) {
+            const copy =
+              [...prev];
+
+            copy[index] = group;
+
+            return copy;
+          }
+
+          return [
+            group,
+            ...prev,
+          ];
+        });
+      } catch (error) {
+        console.error(
+          "Join group error:",
+          error,
+        );
+      }
+    })();
+  };
+
+  // -------------------------------------------------------
+  // Add contact
+  // -------------------------------------------------------
+
+  const addContact = (
+    contactId: string,
+    _contactName: string,
+  ): boolean => {
+    if (!currentUser) {
+      return false;
+    }
+
+    if (
+      contactId === "mymsgai" ||
+      contactId.toLowerCase() === "ia"
+    ) {
+      const exists =
+        chats.some(
+          (chat) =>
+            chat.type === "direct" &&
+            chat.participants.includes(
+              currentUser.id,
+            ) &&
+            chat.participants.includes(
+              "mymsgai",
+            ),
+        );
+
+      if (exists) return false;
 
       const newChat: Chat = {
-        id: `dm-${[currentUser.id, "mymsgai"].sort().join("-")}`,
+        id: `dm-${[
+          currentUser.id,
+          "mymsgai",
+        ]
+          .sort()
+          .join("-")}`,
+
         type: "direct",
+
         name: "MymsgAI",
-        avatar: generateUserAvatarSvg("MymsgAI"),
-        participants: [currentUser.id, "mymsgai"],
+
+        avatar:
+          generateUserAvatarSvg(
+            "MymsgAI",
+          ),
+
+        participants: [
+          currentUser.id,
+          "mymsgai",
+        ],
+
         messages: [
           {
             id: nanoid(),
             senderId: "mymsgai",
-            text: "¡Hola! Soy MymsgAI, tu asistente virtual inteligente. Puedes hacerme preguntas, pedirme que haga cálculos matemáticos, consultarme datos curiosos o simplemente charlar. ¿En qué te ayudo hoy?",
-            timestamp: Date.now(),
+            text:
+              "¡Hola! Soy MymsgAI, tu asistente virtual inteligente.",
+            timestamp:
+              Date.now(),
             type: "text",
             status: "read",
             read: true,
           },
         ],
-        lastMessage: "¡Hola! Soy MymsgAI...",
-        lastMessageTime: Date.now(),
-        userId: currentUser.id,
+
+        lastMessage:
+          "¡Hola! Soy MymsgAI...",
+
+        lastMessageTime:
+          Date.now(),
+
+        userId:
+          currentUser.id,
       };
-      setChats((prev) => [newChat, ...prev]);
+
+      setChats((prev) => [
+        newChat,
+        ...prev,
+      ]);
+
       return true;
     }
 
-    const existing = chats.find(
-      (c) =>
-        c.type === "direct" &&
-        c.participants.includes(contactId) &&
-        c.participants.includes(currentUser.id),
-    );
-    if (existing) return false;
+    const cleanId =
+      contactId.trim();
 
-    // Fetch previous messages for this contact from localStorage just in case
-    const offlineKey = `mymsg_offline_msgs_${currentUser.id}_from_${contactId}`;
-    const previousMessages = JSON.parse(
-      localStorage.getItem(offlineKey) || "[]",
-    );
+    if (!/^\d{8}$/.test(cleanId)) {
+      return false;
+    }
 
-    const newChat: Chat = {
-      id: `dm-${[currentUser.id, contactId].sort().join("-")}`,
-      type: "direct",
-      name: contactName,
-      avatar: generateUserAvatarSvg(contactId),
-      participants: [currentUser.id, contactId],
-      messages: previousMessages,
-      lastMessage:
-        previousMessages.length > 0
-          ? previousMessages[previousMessages.length - 1].text
-          : undefined,
-      lastMessageTime:
-        previousMessages.length > 0
-          ? previousMessages[previousMessages.length - 1].timestamp
-          : Date.now(),
-      userId: currentUser.id,
-    };
-    setChats((prev) => [newChat, ...prev]);
+    const existing =
+      chats.find(
+        (chat) =>
+          chat.type === "direct" &&
+          chat.participants.includes(
+            currentUser.id,
+          ) &&
+          chat.participants.includes(
+            cleanId,
+          ),
+      );
+
+    if (existing) {
+      return false;
+    }
+
+    /*
+     * The supplied contactName is NOT trusted.
+     * The actual profile is fetched from the server.
+     */
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            `/api/users/${encodeURIComponent(
+              cleanId,
+            )}`,
+            {
+              method: "GET",
+              credentials: "include",
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        if (!data?.user) {
+          throw new Error(
+            "Usuario no encontrado",
+          );
+        }
+
+        const user =
+          removeSensitiveUserFields(
+            data.user,
+          );
+
+        saveSafeUser(user);
+
+        const newChat: Chat = {
+          id: `dm-${[
+            currentUser.id,
+            user.id,
+          ]
+            .sort()
+            .join("-")}`,
+
+          type: "direct",
+
+          name:
+            user.originalName ||
+            user.name ||
+            user.id,
+
+          avatar:
+            user.avatar ||
+            generateUserAvatarSvg(
+              user.id,
+            ),
+
+          participants: [
+            currentUser.id,
+            user.id,
+          ],
+
+          messages: [],
+
+          lastMessageTime:
+            Date.now(),
+
+          userId:
+            currentUser.id,
+        };
+
+        setChats((prev) => {
+          if (
+            prev.some(
+              (c) =>
+                c.id ===
+                newChat.id,
+            )
+          ) {
+            return prev;
+          }
+
+          return [
+            newChat,
+            ...prev,
+          ];
+        });
+      } catch (error) {
+        console.error(
+          "Add contact error:",
+          error,
+        );
+      }
+    })();
+
     return true;
   };
+
+  // -------------------------------------------------------
+  // Send message
+  // -------------------------------------------------------
 
   const sendMessage = (
     chatId: string,
     text: string,
-    type: "text" | "image" | "audio" | "file" | "system" = "text",
+    type:
+      | "text"
+      | "image"
+      | "audio"
+      | "file"
+      | "system" = "text",
     mediaUrl?: string,
     replyTo?: string,
     fileName?: string,
@@ -861,461 +1077,1194 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ) => {
     if (!currentUser) return;
 
-    // Censor bad words and drugs
-    const censoredText = type === "text" ? censorMessage(text) : text;
+    const chat =
+      chats.find(
+        (c) => c.id === chatId,
+      );
 
-    const newMessage: Message = {
+    if (!chat) return;
+
+    const censoredText =
+      type === "text"
+        ? censorMessage(text)
+        : text;
+
+    const message: Message = {
       id: nanoid(),
-      senderId: currentUser.id,
-      text: censoredText,
-      timestamp: Date.now(),
+
+      /*
+       * This ID is used only for the optimistic UI.
+       * The server determines the authenticated sender.
+       */
+      senderId:
+        currentUser.id,
+
+      text:
+        censoredText,
+
+      timestamp:
+        Date.now(),
+
       type,
-      status: "sent",
-      read: false,
+
+      status:
+        "sent",
+
+      read:
+        false,
+
+      ...(mediaUrl
+        ? { mediaUrl }
+        : {}),
+
+      ...(replyTo
+        ? { replyTo }
+        : {}),
+
+      ...(fileName
+        ? { fileName }
+        : {}),
+
+      ...(fileSize !== undefined
+        ? { fileSize }
+        : {}),
+
+      ...(mimeType
+        ? { mimeType }
+        : {}),
     };
 
-    if (mediaUrl) {
-      newMessage.mediaUrl = mediaUrl;
-    }
-    if (fileName) newMessage.fileName = fileName;
-    if (fileSize !== undefined) newMessage.fileSize = fileSize;
-    if (mimeType) newMessage.mimeType = mimeType;
-
-    if (replyTo) {
-      newMessage.replyTo = replyTo;
-    }
-
-    // Firebase doesn't accept undefined values
-    // Using structuredClone or similar to completely strip out undefined values
-    const safeMessage = JSON.parse(JSON.stringify(newMessage));
+    // -----------------------------------------------------
+    // Optimistic UI
+    // -----------------------------------------------------
 
     setChats((prev) =>
       prev.map((c) => {
-        if (c.id === chatId) {
-          // Update streak
-          const today = new Date().toISOString().split("T")[0];
-          let newStreak = c.streak || 0;
+        if (c.id !== chatId) {
+          return c;
+        }
 
-          // Reset streak if more than 1 day has passed without interaction
-          if (c.lastInteractionDay) {
-            const lastDate = new Date(c.lastInteractionDay);
-            const currentDate = new Date(today);
-            const diffTime = Math.abs(
-              currentDate.getTime() - lastDate.getTime(),
+        const today =
+          new Date()
+            .toISOString()
+            .split("T")[0];
+
+        let streak =
+          c.streak || 0;
+
+        if (
+          c.lastInteractionDay
+        ) {
+          const previous =
+            new Date(
+              c.lastInteractionDay,
             );
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            if (diffDays > 1) {
-              newStreak = 1; // Reset to 1 because they are interacting today
-            } else if (c.lastInteractionDay !== today) {
-              newStreak += 1;
-            }
-          } else {
-            newStreak = 1;
+          const current =
+            new Date(today);
+
+          const difference =
+            Math.floor(
+              (
+                current.getTime() -
+                previous.getTime()
+              ) /
+                86400000,
+            );
+
+          if (difference > 1) {
+            streak = 1;
+          } else if (
+            c.lastInteractionDay !==
+            today
+          ) {
+            streak += 1;
           }
+        } else {
+          streak = 1;
+        }
 
-          const updatedChat = {
-            ...c,
-            messages: [...c.messages, newMessage],
-            lastMessage:
-              type === "text"
-                ? censoredText
+        return {
+          ...c,
+
+          messages: [
+            ...c.messages,
+            message,
+          ],
+
+          lastMessage:
+            type === "text"
+              ? censoredText
               : type === "image"
                 ? "📷 Imagen"
                 : type === "audio"
                   ? "🎤 Audio"
                   : "📎 Archivo",
-            lastMessageTime: newMessage.timestamp,
-            streak: newStreak,
-            lastInteractionDay: today,
-          };
 
-          // Broadcast for groups or handle offline for DMs (Firebase)
-          if (c.type === "group") {
-            import("@/lib/firebase").then(({ db }) => {
-              import("firebase/database").then(({ ref, set }) => {
-                const globalGroupRef = ref(db, `groups/${c.id}`);
-                // Strip undefined values for Firebase
-                const groupDataToSave = JSON.parse(
-                  JSON.stringify({
-                    ...updatedChat,
-                    messages: updatedChat.messages,
-                  }),
-                );
-                set(globalGroupRef, groupDataToSave).catch((e) =>
-                  console.error("Firebase group send error", e),
-                );
-              });
-            });
+          lastMessageTime:
+            message.timestamp,
 
-            const globalGroupStr = localStorage.getItem(
-              `mymsg_global_group_${c.id}`,
-            );
-            if (globalGroupStr) {
-              const globalGroup = JSON.parse(globalGroupStr);
-              globalGroup.messages.push(newMessage);
-              globalGroup.lastMessage = updatedChat.lastMessage;
-              globalGroup.lastMessageTime = updatedChat.lastMessageTime;
-              localStorage.setItem(
-                `mymsg_global_group_${c.id}`,
-                JSON.stringify(globalGroup),
-              );
-            }
-          } else {
-            // Send message to global Firebase queue for the recipient
-            const recipientId = c.participants.find(
-              (p) => p !== currentUser.id,
-            );
-            if (recipientId && recipientId !== "mymsgai") {
-              import("@/lib/firebase").then(({ db }) => {
-                import("firebase/database").then(({ ref, push, set }) => {
-                  const fbMsgRef = push(
-                    ref(
-                      db,
-                      `offline_messages/${recipientId}/from_${currentUser.id}`,
-                    ),
-                  );
-                  // Strip undefined values before sending to Firebase
-                  const cleanMsg = JSON.parse(JSON.stringify(safeMessage));
-                  set(fbMsgRef, cleanMsg).catch((e) =>
-                    console.error("Firebase realtime send error", e),
-                  );
-                });
-              });
+          streak,
 
-              // Keep local fallback just in case
-              const offlineKey = `mymsg_offline_msgs_${recipientId}_from_${currentUser.id}`;
-              const offlineMsgs = JSON.parse(
-                localStorage.getItem(offlineKey) || "[]",
-              );
-              offlineMsgs.push(newMessage);
-              localStorage.setItem(offlineKey, JSON.stringify(offlineMsgs));
-            }
-          }
-
-          // Send browser notification if permission granted and page is not active
-          if (
-            "Notification" in window &&
-            Notification.permission === "granted" &&
-            document.hidden
-          ) {
-            // Don't notify for our own messages
-            if (newMessage.senderId !== currentUser.id) {
-              try {
-                const senderName =
-                  c.type === "group"
-                    ? getAllUsers().get(newMessage.senderId)?.originalName ||
-                      getAllUsers().get(newMessage.senderId)?.name ||
-                      newMessage.senderId
-                    : currentUser.name; // In DMs the name of the sender would actually be the peer's name if it was from them, but we only notify if it's NOT from us, so it's the contact's name
-
-                const displayName = c.type === "group" ? senderName : c.name;
-
-                const messageContent =
-                  type === "text"
-                    ? censoredText
-                    : type === "image"
-                      ? "Envió una imagen"
-                      : type === "audio"
-                        ? "Envió un audio"
-                        : "Envió un archivo";
-                const notification = new Notification(
-                  `¡Alguien te ha hablado!`,
-                  {
-                    body:
-                      c.type === "group"
-                        ? `${displayName} en ${c.name}: ${messageContent}`
-                        : `${displayName}: ${messageContent}`,
-                    icon: c.avatar,
-                  },
-                );
-                notification.onclick = function (event) {
-                  event.preventDefault();
-                  window.focus();
-                };
-
-                // Play a sound if possible
-                try {
-                  const audio = new Audio('/ringtone.mp3'); 
-                  audio.play().catch(e => console.log('Audio play failed:', e));
-                } catch(e) {}
-              } catch (e) {
-                console.warn(
-                  "Notification error (mobile browsers require ServiceWorker):",
-                  e,
-                );
-              }
-            }
-          }
-
-          // Auto-reply from MymsgAI
-          if (c.participants.includes("mymsgai") && type === "text") {
-            setTimeout(async () => {
-              try {
-                const { getMymsgAIResponse } = await import("./mymsgai");
-                const response = await getMymsgAIResponse(text);
-                const isImage = response.startsWith("[IMAGE_URL:");
-
-                const aiMessage: Message = {
-                  id: nanoid(),
-                  senderId: "mymsgai",
-                  text: isImage ? "" : response,
-                  mediaUrl: isImage
-                    ? response.replace("[IMAGE_URL:", "").replace("]", "")
-                    : undefined,
-                  timestamp: Date.now(),
-                  type: isImage ? "image" : "text",
-                  status: "read",
-                  read: true,
-                };
-                setChats((prev) =>
-                  prev.map((ch) =>
-                    ch.id === chatId
-                      ? {
-                          ...ch,
-                          messages: [...ch.messages, aiMessage],
-                          lastMessage: isImage ? "Envió una imagen" : response,
-                          lastMessageTime: Date.now(),
-                        }
-                      : ch,
-                  ),
-                );
-              } catch (e) {
-                console.error("AI Error:", e);
-              }
-            }, 500);
-          }
-
-          return updatedChat;
-        }
-        return c;
+          lastInteractionDay:
+            today,
+        };
       }),
     );
+
+    // -----------------------------------------------------
+    // MymsgAI
+    // -----------------------------------------------------
+
+    if (
+      chat.participants.includes(
+        "mymsgai",
+      ) &&
+      type === "text"
+    ) {
+      setTimeout(async () => {
+        try {
+          const {
+            getMymsgAIResponse,
+          } = await import(
+            "./mymsgai"
+          );
+
+          const response =
+            await getMymsgAIResponse(
+              text,
+            );
+
+          const isImage =
+            response.startsWith(
+              "[IMAGE_URL:",
+            );
+
+          const aiMessage: Message =
+            {
+              id: nanoid(),
+
+              senderId:
+                "mymsgai",
+
+              text:
+                isImage
+                  ? ""
+                  : response,
+
+              mediaUrl:
+                isImage
+                  ? response
+                      .replace(
+                        "[IMAGE_URL:",
+                        "",
+                      )
+                      .replace(
+                        "]",
+                        "",
+                      )
+                  : undefined,
+
+              timestamp:
+                Date.now(),
+
+              type:
+                isImage
+                  ? "image"
+                  : "text",
+
+              status:
+                "read",
+
+              read:
+                true,
+            };
+
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === chatId
+                ? {
+                    ...c,
+
+                    messages: [
+                      ...c.messages,
+                      aiMessage,
+                    ],
+
+                    lastMessage:
+                      isImage
+                        ? "Envió una imagen"
+                        : response,
+
+                    lastMessageTime:
+                      aiMessage.timestamp,
+                  }
+                : c,
+            ),
+          );
+        } catch (error) {
+          console.error(
+            "MymsgAI error:",
+            error,
+          );
+        }
+      }, 500);
+
+      return;
+    }
+
+    // -----------------------------------------------------
+    // Groups
+    // -----------------------------------------------------
+
+    if (
+      chat.type === "group"
+    ) {
+      void (async () => {
+        try {
+          const response =
+            await fetch(
+              `/api/groups/${encodeURIComponent(
+                chat.id,
+              )}/messages`,
+              {
+                method: "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                credentials:
+                  "include",
+
+                body: JSON.stringify({
+                  text:
+                    censoredText,
+
+                  type,
+
+                  mediaUrl,
+
+                  replyTo,
+
+                  fileName,
+
+                  fileSize,
+
+                  mimeType,
+                }),
+              },
+            );
+
+          await parseApiResponse(
+            response,
+          );
+        } catch (error) {
+          console.error(
+            "Group message error:",
+            error,
+          );
+        }
+      })();
+
+      return;
+    }
+
+    // -----------------------------------------------------
+    // Direct messages
+    // -----------------------------------------------------
+
+    const recipientId =
+      chat.participants.find(
+        (id) =>
+          id !==
+          currentUser.id,
+      );
+
+    if (
+      !recipientId ||
+      recipientId === "mymsgai"
+    ) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            "/api/messages",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              credentials:
+                "include",
+
+              body: JSON.stringify({
+                recipientId,
+
+                text:
+                  censoredText,
+
+                type,
+
+                mediaUrl,
+
+                replyTo,
+
+                fileName,
+
+                fileSize,
+
+                mimeType,
+              }),
+            },
+          );
+
+        await parseApiResponse(
+          response,
+        );
+      } catch (error) {
+        console.error(
+          "Message send error:",
+          error,
+        );
+      }
+    })();
   };
 
-  const getChat = (chatId: string) => chats.find((c) => c.id === chatId);
+  // -------------------------------------------------------
+  // Group synchronization
+  // -------------------------------------------------------
 
-  const getChatMessages = (chatId: string): Message[] => {
-    const chat = chats.find((c) => c.id === chatId);
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let cancelled = false;
+
+    const syncGroups =
+      async () => {
+        const groupChats =
+          chats.filter(
+            (chat) =>
+              chat.type ===
+              "group",
+          );
+
+        for (const chat of groupChats) {
+          if (cancelled) return;
+
+          try {
+            const response =
+              await fetch(
+                `/api/groups/${encodeURIComponent(
+                  chat.id,
+                )}`,
+                {
+                  method: "GET",
+                  credentials:
+                    "include",
+                },
+              );
+
+            if (!response.ok) {
+              continue;
+            }
+
+            const data =
+              await response
+                .json()
+                .catch(() => null);
+
+            if (
+              !data?.group ||
+              cancelled
+            ) {
+              continue;
+            }
+
+            const serverGroup =
+              data.group as Chat;
+
+            setChats((prev) =>
+              prev.map((c) =>
+                c.id ===
+                serverGroup.id
+                  ? {
+                      ...c,
+                      ...serverGroup,
+                    }
+                  : c,
+              ),
+            );
+          } catch {
+            // Temporary network errors are ignored.
+          }
+        }
+      };
+
+    void syncGroups();
+
+    const interval =
+      window.setInterval(
+        syncGroups,
+        5000,
+      );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(
+        interval,
+      );
+    };
+  }, [
+    currentUser?.id,
+    chats
+      .filter(
+        (c) =>
+          c.type === "group",
+      )
+      .map((c) => c.id)
+      .join(","),
+  ]);
+
+  // -------------------------------------------------------
+  // Get chat
+  // -------------------------------------------------------
+
+  const getChat = (
+    chatId: string,
+  ) =>
+    chats.find(
+      (c) => c.id === chatId,
+    );
+
+  // -------------------------------------------------------
+  // Get messages
+  // -------------------------------------------------------
+
+  const getChatMessages = (
+    chatId: string,
+  ): Message[] => {
+    const chat =
+      chats.find(
+        (c) => c.id === chatId,
+      );
+
     return chat?.messages || [];
   };
 
-  const getAllUsers = (): Map<string, User> => {
-    const users = new Map<string, User>();
-    // Collect all users from localStorage that have been created
-    const keys = Object.keys(localStorage);
-    keys.forEach((key) => {
-      if (
-        key.startsWith("mymsg_user_") &&
-        !key.includes("chats") &&
-        !key.includes("reports")
-      ) {
+  // -------------------------------------------------------
+  // Get all cached public users
+  // -------------------------------------------------------
+
+  const getAllUsers =
+    (): Map<string, User> => {
+      const users =
+        new Map<string, User>();
+
+      for (const key of Object.keys(
+        localStorage,
+      )) {
+        if (
+          !key.startsWith(
+            "mymsg_user_",
+          )
+        ) {
+          continue;
+        }
+
         try {
-            const user = JSON.parse(localStorage.getItem(key) || "");
-            const { password: _password, ...safeUser } = user;
-            users.set(safeUser.id, safeUser);
-            if (user.password) {
-              localStorage.setItem(key, JSON.stringify(safeUser));
-            }
-        } catch (e) {
-          // Ignore parse errors
+          const parsed =
+            JSON.parse(
+              localStorage.getItem(
+                key,
+              ) || "",
+            );
+
+          if (!parsed?.id) {
+            continue;
+          }
+
+          const safeUser =
+            removeSensitiveUserFields(
+              parsed,
+            );
+
+          users.set(
+            safeUser.id,
+            safeUser,
+          );
+        } catch {
+          // Ignore invalid local cache.
         }
       }
-    });
-    return users;
-  };
 
-  const updateUser = (updates: Partial<User>) => {
+      if (currentUser) {
+        users.set(
+          currentUser.id,
+          removeSensitiveUserFields(
+            currentUser,
+          ),
+        );
+      }
+
+      return users;
+    };
+
+  // -------------------------------------------------------
+  // Update user
+  // -------------------------------------------------------
+
+  const updateUser = (
+    updates: Partial<User>,
+  ) => {
     if (!currentUser) return;
-    const { password: _password, ...safeUpdates } = updates;
-    const updatedUser = { ...currentUser, ...safeUpdates };
-    setCurrentUser(updatedUser);
-    localStorage.setItem(
-      `mymsg_user_${currentUser.id}`,
-      JSON.stringify(updatedUser),
-    );
 
-    // Update Firebase
-    import("firebase/database").then(({ ref, update }) => {
-      import("@/lib/firebase").then(({ db }) => {
-        update(
-          ref(db, `users/${currentUser.id}`),
-          JSON.parse(JSON.stringify(safeUpdates)),
-        ).catch((e) => console.error(e));
-      });
-    });
+    const safeUpdates: Partial<User> =
+      {};
+
+    /*
+     * Explicit allowlist.
+     *
+     * Never allow the client to modify:
+     * - id
+     * - password
+     * - originalName
+     * - banned
+     * - punishedUntil
+     * - googleLinked
+     */
+
+    if (
+      typeof updates.name ===
+      "string"
+    ) {
+      safeUpdates.name =
+        updates.name
+          .trim()
+          .slice(0, 100);
+    }
+
+    if (
+      typeof updates.avatar ===
+      "string"
+    ) {
+      safeUpdates.avatar =
+        updates.avatar;
+    }
+
+    if (
+      updates.language ===
+        "es" ||
+      updates.language ===
+        "en"
+    ) {
+      safeUpdates.language =
+        updates.language;
+    }
+
+    if (
+      typeof updates.youtubeUrl ===
+      "string"
+    ) {
+      safeUpdates.youtubeUrl =
+        updates.youtubeUrl
+          .slice(0, 500);
+    }
+
+    if (
+      Object.keys(
+        safeUpdates,
+      ).length === 0
+    ) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            "/api/auth/me",
+            {
+              method: "PATCH",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              credentials:
+                "include",
+
+              body: JSON.stringify(
+                safeUpdates,
+              ),
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        const serverUser =
+          removeSensitiveUserFields(
+            data.user ||
+              {
+                ...currentUser,
+                ...safeUpdates,
+              },
+          );
+
+        setCurrentUser(
+          serverUser,
+        );
+
+        saveSafeUser(
+          serverUser,
+        );
+      } catch (error) {
+        console.error(
+          "Update user error:",
+          error,
+        );
+      }
+    })();
   };
 
-  const updateGroup = (groupId: string, updates: Partial<Chat>) => {
+  // -------------------------------------------------------
+  // Update group
+  // -------------------------------------------------------
+
+  const updateGroup = (
+    groupId: string,
+    updates: Partial<Chat>,
+  ) => {
+    if (!currentUser) return;
+
+    /*
+     * Only send fields that a normal group member
+     * should be allowed to modify.
+     */
+    const safeUpdates:
+      Partial<Chat> = {};
+
+    if (
+      typeof updates.name ===
+      "string"
+    ) {
+      safeUpdates.name =
+        updates.name
+          .trim()
+          .slice(0, 100);
+    }
+
+    if (
+      typeof updates.avatar ===
+      "string"
+    ) {
+      safeUpdates.avatar =
+        updates.avatar;
+    }
+
+    if (
+      typeof updates.wallpaper ===
+      "string"
+    ) {
+      safeUpdates.wallpaper =
+        updates.wallpaper;
+    }
+
+    if (
+      Object.keys(
+        safeUpdates,
+      ).length === 0
+    ) {
+      return;
+    }
+
     setChats((prev) =>
-      prev.map((c) => (c.id === groupId ? { ...c, ...updates } : c)),
+      prev.map((chat) =>
+        chat.id === groupId
+          ? {
+              ...chat,
+              ...safeUpdates,
+            }
+          : chat,
+      ),
     );
 
-    // Update global storage
-    const globalGroupStr = localStorage.getItem(
-      `mymsg_global_group_${groupId}`,
-    );
-    if (globalGroupStr) {
-      const globalGroup = JSON.parse(globalGroupStr);
-      localStorage.setItem(
-        `mymsg_global_group_${groupId}`,
-        JSON.stringify({ ...globalGroup, ...updates }),
-      );
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            `/api/groups/${encodeURIComponent(
+              groupId,
+            )}`,
+            {
+              method: "PATCH",
 
-      // Update Firebase
-      import("firebase/database").then(({ ref, update }) => {
-        import("@/lib/firebase").then(({ db }) => {
-          update(
-            ref(db, `groups/${groupId}`),
-            JSON.parse(JSON.stringify(updates)),
-          ).catch((e) => console.error(e));
-        });
-      });
-    }
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              credentials:
+                "include",
+
+              body: JSON.stringify(
+                safeUpdates,
+              ),
+            },
+          );
+
+        await parseApiResponse(
+          response,
+        );
+      } catch (error) {
+        console.error(
+          "Update group error:",
+          error,
+        );
+      }
+    })();
   };
 
-  const addAdmin = async (userId: string) => {
-    if (!currentUser || currentUser.id !== "12345670") return;
-    try {
-      const { ref, set } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
-      await set(ref(db, `admins/${userId}`), true);
-    } catch (e) {
-      console.error("Failed to add admin", e);
+  // -------------------------------------------------------
+  // Admins
+  // -------------------------------------------------------
+
+  const addAdmin = (
+    userId: string,
+  ) => {
+    if (!currentUser) return;
+
+    const cleanId =
+      userId.trim();
+
+    if (
+      !/^\d{8}$/.test(
+        cleanId,
+      )
+    ) {
+      return;
     }
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            "/api/admins",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              credentials:
+                "include",
+
+              body: JSON.stringify({
+                userId:
+                  cleanId,
+              }),
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        if (
+          Array.isArray(
+            data?.admins,
+          )
+        ) {
+          setAdmins(
+            data.admins.map(
+              (id: unknown) =>
+                String(id),
+            ),
+          );
+        } else {
+          setAdmins((prev) =>
+            prev.includes(
+              cleanId,
+            )
+              ? prev
+              : [
+                  ...prev,
+                  cleanId,
+                ],
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Add admin error:",
+          error,
+        );
+      }
+    })();
   };
 
-  const removeAdmin = async (userId: string) => {
-    if (!currentUser || currentUser.id !== "12345670") return;
-    try {
-      const { ref, remove } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
-      await remove(ref(db, `admins/${userId}`));
-    } catch (e) {
-      console.error("Failed to remove admin", e);
+  const removeAdmin = (
+    userId: string,
+  ) => {
+    if (!currentUser) return;
+
+    const cleanId =
+      userId.trim();
+
+    if (
+      !/^\d{8}$/.test(
+        cleanId,
+      )
+    ) {
+      return;
     }
+
+    void (async () => {
+      try {
+        const response =
+          await fetch(
+            `/api/admins/${encodeURIComponent(
+              cleanId,
+            )}`,
+            {
+              method: "DELETE",
+
+              credentials:
+                "include",
+            },
+          );
+
+        const data =
+          await parseApiResponse(
+            response,
+          );
+
+        if (
+          Array.isArray(
+            data?.admins,
+          )
+        ) {
+          setAdmins(
+            data.admins.map(
+              (id: unknown) =>
+                String(id),
+            ),
+          );
+        } else {
+          setAdmins((prev) =>
+            prev.filter(
+              (id) =>
+                id !== cleanId,
+            ),
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Remove admin error:",
+          error,
+        );
+      }
+    })();
   };
+
+  // -------------------------------------------------------
+  // Reports
+  // -------------------------------------------------------
 
   const reportEntity = (
-    type: "Usuario" | "Grupo",
+    type:
+      | "Usuario"
+      | "Grupo",
     targetId: string,
     targetName: string,
   ) => {
     if (!currentUser) return;
 
-    // Get last 50 messages as evidence
-    const chat = chats.find(
-      (c) => c.id === targetId || c.participants.includes(targetId),
+    const chat =
+      chats.find(
+        (c) =>
+          c.id === targetId ||
+          c.participants.includes(
+            targetId,
+          ),
+      );
+
+    const targetMessages =
+      chat
+        ? chat.messages.slice(
+            -50,
+          )
+        : [];
+
+    const report: Report =
+      {
+        id: nanoid(),
+
+        type,
+
+        targetId,
+
+        targetName,
+
+        reporterId:
+          currentUser.id,
+
+        timestamp:
+          Date.now(),
+
+        targetMessages,
+      };
+
+    setReports((prev) => [
+      report,
+      ...prev,
+    ]);
+  };
+
+  const deleteReport = (
+    reportId: string,
+  ) => {
+    setReports((prev) =>
+      prev.filter(
+        (report) =>
+          report.id !==
+          reportId,
+      ),
     );
-    const targetMessages = chat ? chat.messages.slice(-50) : [];
-
-    const newReport: Report = {
-      id: nanoid(),
-      type,
-      targetId,
-      targetName,
-      reporterId: currentUser.id,
-      timestamp: Date.now(),
-      targetMessages,
-    };
-
-    setReports((prev) => [newReport, ...prev]);
   };
 
-  const deleteReport = (reportId: string) => {
-    setReports((prev) => prev.filter((r) => r.id !== reportId));
-  };
+  // -------------------------------------------------------
+  // Wallpaper
+  // -------------------------------------------------------
 
-  const setChatWallpaper = (chatId: string, url: string) => {
+  const setChatWallpaper = (
+    chatId: string,
+    url: string,
+  ) => {
     setChats((prev) =>
-      prev.map((c) => (c.id === chatId ? { ...c, wallpaper: url } : c)),
+      prev.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+              wallpaper: url,
+            }
+          : chat,
+      ),
     );
   };
 
-  const forgetChat = (chatId: string) => {
-    setChats((prev) => prev.filter((c) => c.id !== chatId));
-  };
+  // -------------------------------------------------------
+  // Forget chat
+  // -------------------------------------------------------
 
-  const clearChatMessages = (chatId: string) => {
+  const forgetChat = (
+    chatId: string,
+  ) => {
     setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          return {
-            ...c,
-            messages: [],
-            lastMessage: undefined,
-            lastMessageTime: undefined,
-          };
-        }
-        return c;
-      }),
+      prev.filter(
+        (chat) =>
+          chat.id !== chatId,
+      ),
     );
   };
+
+  // -------------------------------------------------------
+  // Clear messages locally
+  // -------------------------------------------------------
+
+  const clearChatMessages = (
+    chatId: string,
+  ) => {
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+              messages: [],
+              lastMessage:
+                undefined,
+              lastMessageTime:
+                undefined,
+            }
+          : chat,
+      ),
+    );
+  };
+
+  // -------------------------------------------------------
+  // Delete message
+  // -------------------------------------------------------
 
   const deleteMessage = (
     chatId: string,
     messageId: string,
-    deleteForEveryone: boolean = false,
+    deleteForEveryone =
+      false,
+  ) => {
+    if (!currentUser) return;
+
+    const chat =
+      chats.find(
+        (c) => c.id === chatId,
+      );
+
+    if (!chat) return;
+
+    const message =
+      chat.messages.find(
+        (m) => m.id === messageId,
+      );
+
+    if (!message) return;
+
+    if (
+      deleteForEveryone &&
+      message.senderId !==
+        currentUser.id
+    ) {
+      return;
+    }
+
+    setChats((prev) =>
+      prev.map((c) => {
+        if (c.id !== chatId) {
+          return c;
+        }
+
+        return {
+          ...c,
+
+          messages:
+            c.messages.map(
+              (m) => {
+                if (
+                  m.id !==
+                  messageId
+                ) {
+                  return m;
+                }
+
+                if (
+                  deleteForEveryone
+                ) {
+                  return {
+                    ...m,
+
+                    isDeletedForEveryone:
+                      true,
+
+                    text:
+                      "Mensaje eliminado",
+
+                    type:
+                      "system",
+
+                    mediaUrl:
+                      undefined,
+                  };
+                }
+
+                return {
+                  ...m,
+
+                  isDeletedForMe:
+                    true,
+                };
+              },
+            ),
+        };
+      }),
+    );
+
+    /*
+     * Synchronize deletion with server.
+     *
+     * The server MUST verify that the authenticated
+     * user owns the message before allowing
+     * deleteForEveryone.
+     */
+
+    if (
+      deleteForEveryone
+    ) {
+      void (async () => {
+        try {
+          const response =
+            await fetch(
+              `/api/messages/${encodeURIComponent(
+                messageId,
+              )}`,
+              {
+                method: "DELETE",
+
+                credentials:
+                  "include",
+              },
+            );
+
+          if (!response.ok) {
+            console.error(
+              "Server rejected message deletion",
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Delete message error:",
+            error,
+          );
+        }
+      })();
+    }
+  };
+
+  // -------------------------------------------------------
+  // Mark chat read
+  // -------------------------------------------------------
+
+  const markChatAsRead = (
+    chatId: string,
   ) => {
     if (!currentUser) return;
 
     setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          const messageToDelete = c.messages.find((m) => m.id === messageId);
-          if (messageToDelete) {
-            // If deleting for everyone, MUST be my message
-            if (
-              deleteForEveryone &&
-              messageToDelete.senderId !== currentUser.id
-            ) {
-              return c;
+      prev.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+
+              messages:
+                chat.messages.map(
+                  (message) =>
+                    message.senderId !==
+                    currentUser.id
+                      ? {
+                          ...message,
+                          read: true,
+                        }
+                      : message,
+                ),
             }
-
-            const newMessages = c.messages.map((m) => {
-              if (m.id === messageId) {
-                if (deleteForEveryone) {
-                  return {
-                    ...m,
-                    isDeletedForEveryone: true,
-                    text: "Mensaje eliminado",
-                    type: "system" as const,
-                    mediaUrl: undefined,
-                  };
-                } else {
-                  return { ...m, isDeletedForMe: true };
-                }
-              }
-              return m;
-            });
-
-            return {
-              ...c,
-              messages: newMessages,
-            };
-          }
-        }
-        return c;
-      }),
+          : chat,
+      ),
     );
   };
 
-  const markChatAsRead = (chatId: string) => {
-    if (!currentUser) return;
-    setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          return {
-            ...c,
-            messages: c.messages.map((m) =>
-              m.senderId !== currentUser.id ? { ...m, read: true } : m,
-            ),
-          };
-        }
-        return c;
-      }),
-    );
-  };
+  // -------------------------------------------------------
+  // Reply
+  // -------------------------------------------------------
 
   const replyToMessage = (
     chatId: string,
@@ -1324,13 +2273,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ) => {
     if (!currentUser) return;
 
-    const chat = getChat(chatId);
-    const messageToReplyTo = chat?.messages.find((m) => m.id === messageId);
+    const chat =
+      getChat(chatId);
 
-    if (messageToReplyTo) {
-      sendMessage(chatId, replyText, "text", undefined, messageId);
-    }
+    const original =
+      chat?.messages.find(
+        (message) =>
+          message.id ===
+          messageId,
+      );
+
+    if (!original) return;
+
+    sendMessage(
+      chatId,
+      replyText,
+      "text",
+      undefined,
+      messageId,
+    );
   };
+
+  // -------------------------------------------------------
+  // Forward
+  // -------------------------------------------------------
 
   const forwardMessage = (
     fromChatId: string,
@@ -1339,64 +2305,124 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ) => {
     if (!currentUser) return;
 
-    const chat = getChat(fromChatId);
-    const messageToForward = chat?.messages.find((m) => m.id === messageId);
+    const chat =
+      getChat(fromChatId);
 
-    if (messageToForward) {
-      const prefix = "[Reenviado] ";
-      const text =
-        messageToForward.type === "text"
-          ? `${prefix}${messageToForward.text}`
-          : prefix;
-      sendMessage(
-        toChatId,
-        text,
-        messageToForward.type,
-        messageToForward.mediaUrl,
+    const message =
+      chat?.messages.find(
+        (item) =>
+          item.id === messageId,
       );
-    }
+
+    if (!message) return;
+
+    const prefix =
+      "[Reenviado] ";
+
+    const text =
+      message.type === "text"
+        ? `${prefix}${message.text}`
+        : prefix;
+
+    sendMessage(
+      toChatId,
+      text,
+      message.type,
+      message.mediaUrl,
+      undefined,
+      message.fileName,
+      message.fileSize,
+      message.mimeType,
+    );
   };
 
-  const value: StoreContextType = {
+  // -------------------------------------------------------
+  // Context value
+  // -------------------------------------------------------
+
+  const value:
+    StoreContextType = {
     currentUser,
+
     isOnline,
+
     login,
+
     verifyPassword,
+
     logout,
+
     chats,
+
     createGroup,
+
     joinGroup,
+
     addContact,
+
     sendMessage,
+
     getChat,
+
     updateUser,
+
     updateGroup,
+
     admins,
+
     addAdmin,
+
     removeAdmin,
+
     reports,
+
     reportEntity,
+
     setChatWallpaper,
+
     getChatMessages,
+
     getAllUsers,
+
     forgetChat,
+
     clearChatMessages,
+
     deleteMessage,
+
     deleteReport,
+
     markChatAsRead,
+
     replyToMessage,
+
     forwardMessage,
   };
 
   return (
-    <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+    <StoreContext.Provider
+      value={value}
+    >
+      {children}
+    </StoreContext.Provider>
   );
 }
 
+// ---------------------------------------------------------
+// Hook
+// ---------------------------------------------------------
+
 export function useStore() {
-  const context = useContext(StoreContext);
-  if (context === undefined) {
-    throw new Error("useStore must be used within a StoreProvider");
+  const context =
+    useContext(StoreContext);
+
+  if (
+    context === undefined
+  ) {
+    throw new Error(
+      "useStore must be used within a StoreProvider",
+    );
   }
+
   return context;
 }
