@@ -1,6 +1,5 @@
 import express, { type Express } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import type { Server } from "http";
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -12,8 +11,18 @@ const firebaseDatabaseUrl =
 const uploadDirectory = path.resolve(process.cwd(), "uploads");
 
 const safeInlineExtensions = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp",
-  ".mp3", ".wav", ".ogg", ".m4a", ".webm",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".avif",
+  ".bmp",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".webm",
 ]);
 
 const failedLogins = new Map<
@@ -34,6 +43,20 @@ type FirebaseUser = {
   googleLinked?: string;
 };
 
+type FirebaseGroup = {
+  id?: string;
+  name?: string;
+  type?: string;
+  avatar?: string;
+  wallpaper?: string;
+  participants?: string[] | Record<string, boolean>;
+  messages?: unknown[] | Record<string, unknown>;
+  lastMessage?: string;
+  lastMessageTime?: number;
+  ownerId?: string;
+  userId?: string;
+};
+
 function publicUser(user: FirebaseUser, id: string) {
   return {
     id,
@@ -48,9 +71,100 @@ function publicUser(user: FirebaseUser, id: string) {
   };
 }
 
+/*
+ * ============================================================
+ * FIREBASE HELPERS
+ * ============================================================
+ */
+
+function firebasePath(pathName: string) {
+  return pathName
+    .split("/")
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join("/");
+}
+
+async function firebaseRequest<T = unknown>(
+  pathName: string,
+  init?: RequestInit
+): Promise<T> {
+  const response = await fetch(
+    `${firebaseDatabaseUrl}/${firebasePath(pathName)}.json`,
+    init
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Firebase request failed: ${response.status} ${text}`
+    );
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
+async function readFirebase<T = unknown>(
+  pathName: string
+): Promise<T | null> {
+  return firebaseRequest<T | null>(pathName);
+}
+
+async function writeFirebase<T = unknown>(
+  pathName: string,
+  method: "PUT" | "PATCH" | "DELETE" | "POST",
+  value?: unknown
+): Promise<T> {
+  return firebaseRequest<T>(pathName, {
+    method,
+    headers: {
+      "content-type": "application/json",
+    },
+    body:
+      method === "DELETE"
+        ? undefined
+        : JSON.stringify(value),
+  });
+}
+
+async function readFirebaseUsers(): Promise<
+  Record<string, FirebaseUser>
+> {
+  return (
+    (await readFirebase<Record<string, FirebaseUser>>(
+      "users"
+    )) || {}
+  );
+}
+
+async function readFirebaseUser(
+  id: string
+): Promise<FirebaseUser | undefined> {
+  return (
+    (await readFirebase<FirebaseUser>(
+      `users/${id}`
+    )) || undefined
+  );
+}
+
+/*
+ * ============================================================
+ * PASSWORDS
+ * ============================================================
+ */
+
 function hashPassword(password: string) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const salt = crypto
+    .randomBytes(16)
+    .toString("hex");
+
+  const hash = crypto
+    .scryptSync(password, salt, 64)
+    .toString("hex");
 
   return `scrypt:${salt}:${hash}`;
 }
@@ -59,9 +173,14 @@ function passwordMatches(
   password: string,
   storedPassword?: string
 ) {
-  if (!storedPassword) return false;
+  if (!storedPassword) {
+    return false;
+  }
 
-  // Compatibilidad con contraseñas antiguas en texto plano.
+  /*
+   * Compatibilidad con contraseñas antiguas.
+   * Se migran a scrypt después de un login correcto.
+   */
   if (!storedPassword.startsWith("scrypt:")) {
     const actual = Buffer.from(password);
     const expected = Buffer.from(storedPassword);
@@ -72,65 +191,268 @@ function passwordMatches(
     );
   }
 
-  const [, salt, expected] = storedPassword.split(":");
+  const parts = storedPassword.split(":");
 
-  if (!salt || !expected) return false;
+  if (parts.length !== 3) {
+    return false;
+  }
 
-  const actual = crypto
-    .scryptSync(password, salt, 64)
-    .toString("hex");
+  const [, salt, expected] = parts;
+
+  if (!salt || !expected) {
+    return false;
+  }
+
+  try {
+    const actual = crypto
+      .scryptSync(password, salt, 64)
+      .toString("hex");
+
+    const actualBuffer = Buffer.from(actual);
+    const expectedBuffer = Buffer.from(expected);
+
+    return (
+      actualBuffer.length === expectedBuffer.length &&
+      crypto.timingSafeEqual(
+        actualBuffer,
+        expectedBuffer
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+/*
+ * ============================================================
+ * GENERAL VALIDATION
+ * ============================================================
+ */
+
+function validUserId(id: unknown): id is string {
+  return (
+    typeof id === "string" &&
+    /^\d{8}$/.test(id)
+  );
+}
+
+function cleanText(
+  value: unknown,
+  maxLength: number
+) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/\u0000/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function validMessageType(value: unknown) {
+  const type = String(value || "text");
+
+  return [
+    "text",
+    "image",
+    "video",
+    "audio",
+    "file",
+    "system",
+  ].includes(type)
+    ? type
+    : "text";
+}
+
+function clientMessageId(value: unknown) {
+  const id = String(value || "").trim();
+
+  if (
+    id &&
+    id.length <= 120 &&
+    /^[A-Za-z0-9_-]+$/.test(id)
+  ) {
+    return id;
+  }
+
+  return crypto.randomUUID();
+}
+
+function normalizeParticipants(
+  value: FirebaseGroup["participants"]
+): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((id): id is string => validUserId(id))
+      .slice(0, 500);
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    return Object.keys(value)
+      .filter(validUserId)
+      .slice(0, 500);
+  }
+
+  return [];
+}
+
+function normalizeMessages(
+  value: FirebaseGroup["messages"]
+): any[] {
+  if (Array.isArray(value)) {
+    return value.slice(-1000);
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    return Object.values(value).slice(-1000);
+  }
+
+  return [];
+}
+
+function publicMessage(message: any) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  return {
+    id:
+      typeof message.id === "string"
+        ? message.id
+        : undefined,
+    senderId:
+      typeof message.senderId === "string"
+        ? message.senderId
+        : undefined,
+    recipientId:
+      typeof message.recipientId === "string"
+        ? message.recipientId
+        : undefined,
+    text:
+      typeof message.text === "string"
+        ? message.text.slice(0, 5000)
+        : "",
+    timestamp:
+      typeof message.timestamp === "number"
+        ? message.timestamp
+        : Date.now(),
+    type: validMessageType(message.type),
+    mediaUrl:
+      typeof message.mediaUrl === "string"
+        ? message.mediaUrl
+        : undefined,
+    replyTo:
+      typeof message.replyTo === "string"
+        ? message.replyTo
+        : undefined,
+    fileName:
+      typeof message.fileName === "string"
+        ? message.fileName.slice(0, 180)
+        : undefined,
+    fileSize:
+      typeof message.fileSize === "number"
+        ? message.fileSize
+        : undefined,
+    mimeType:
+      typeof message.mimeType === "string"
+        ? message.mimeType.slice(0, 120)
+        : undefined,
+    deleted:
+      message.deleted === true,
+  };
+}
+
+function publicGroup(
+  group: FirebaseGroup,
+  id: string
+) {
+  const participants =
+    normalizeParticipants(
+      group.participants
+    );
+
+  const messages = normalizeMessages(
+    group.messages
+  )
+    .map(publicMessage)
+    .filter(Boolean);
+
+  return {
+    id,
+    name:
+      typeof group.name === "string"
+        ? group.name.slice(0, 120)
+        : "Grupo",
+    type: group.type || "group",
+    avatar: group.avatar,
+    wallpaper: group.wallpaper,
+    participants,
+    messages,
+    lastMessage:
+      typeof group.lastMessage === "string"
+        ? group.lastMessage.slice(0, 5000)
+        : undefined,
+    lastMessageTime:
+      typeof group.lastMessageTime === "number"
+        ? group.lastMessageTime
+        : undefined,
+
+    /*
+     * Estos datos no son secretos.
+     * Sirven para que el backend pueda comprobar
+     * quién puede modificar el grupo.
+     */
+    ownerId:
+      typeof group.ownerId === "string"
+        ? group.ownerId
+        : group.userId,
+  };
+}
+
+/*
+ * ============================================================
+ * ADMIN
+ * ============================================================
+ */
+
+async function isAdmin(userId: string) {
+  const value = await readFirebase(
+    `admins/${userId}`
+  );
 
   return (
-    Buffer.byteLength(actual) ===
-      Buffer.byteLength(expected) &&
-    crypto.timingSafeEqual(
-      Buffer.from(actual),
-      Buffer.from(expected)
-    )
+    value === true ||
+    (value !== null &&
+      value !== false &&
+      value !== undefined)
   );
 }
 
-async function readFirebaseUsers(): Promise<
-  Record<string, FirebaseUser>
-> {
-  const response = await fetch(
-    `${firebaseDatabaseUrl}/users.json`
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "No se pudo conectar con el servidor de usuarios"
-    );
-  }
-
-  return (await response.json()) || {};
-}
-
-async function readFirebaseUser(
-  id: string
-): Promise<FirebaseUser | undefined> {
-  const response = await fetch(
-    `${firebaseDatabaseUrl}/users/${encodeURIComponent(id)}.json`
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "No se pudo conectar con el servidor de usuarios"
-    );
-  }
-
-  return (await response.json()) || undefined;
-}
+/*
+ * ============================================================
+ * ROUTES
+ * ============================================================
+ */
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  await fs.mkdir(uploadDirectory, {
+    recursive: true,
+  });
 
   /*
-   * ============================================================
+   * ==========================================================
    * UPLOADS
-   * ============================================================
+   * ==========================================================
    */
 
   app.use(
@@ -144,7 +466,9 @@ export async function registerRoutes(
 
         if (
           !safeInlineExtensions.has(
-            path.extname(filePath).toLowerCase()
+            path
+              .extname(filePath)
+              .toLowerCase()
           )
         ) {
           response.setHeader(
@@ -157,9 +481,9 @@ export async function registerRoutes(
   );
 
   /*
-   * ============================================================
+   * ==========================================================
    * AUTH MIDDLEWARE
-   * ============================================================
+   * ==========================================================
    */
 
   const requireAuth = (
@@ -176,324 +500,467 @@ export async function registerRoutes(
     next();
   };
 
-  /*
-   * ============================================================
-   * AUTH
-   * ============================================================
-   */
-
-  app.post("/api/auth/login", async (req, res) => {
-    const name = String(req.body?.name || "").trim();
-    const password = String(req.body?.password || "");
-
-    const address = req.ip || "unknown";
-    const attempt = failedLogins.get(address);
-
-    if (
-      attempt &&
-      attempt.resetAt > Date.now() &&
-      attempt.count >= 7
-    ) {
-      return res.status(429).json({
-        message:
-          "Demasiados intentos. Espera unos minutos.",
-      });
-    }
-
-    if (!name || !password) {
-      return res.status(400).json({
-        message:
-          "Nombre y contraseña son requeridos",
+  const requireAdmin = async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    if (!req.session.userId) {
+      return res.status(401).json({
+        message: "Debes iniciar sesión",
       });
     }
 
     try {
-      const users = await readFirebaseUsers();
-
-      const entry = Object.entries(users).find(
-        ([id, user]) => {
-          const candidateName =
-            user.originalName ||
-            user.name ||
-            id;
-
-          return (
-            candidateName.toLowerCase() ===
-              name.toLowerCase() ||
-            id === name
-          );
-        }
-      );
-
       if (
-        !entry ||
-        !passwordMatches(
-          password,
-          entry[1].password
-        )
+        !(await isAdmin(
+          req.session.userId
+        ))
       ) {
-        const current = failedLogins.get(address);
-
-        failedLogins.set(address, {
-          count:
-            (current &&
-            current.resetAt > Date.now()
-              ? current.count
-              : 0) + 1,
-          resetAt:
-            Date.now() +
-            3 * 60 * 1000,
-        });
-
-        return res.status(401).json({
-          message:
-            "Usuario o contraseña incorrectos",
-        });
-      }
-
-      const [id, user] = entry;
-
-      if (user.banned) {
         return res.status(403).json({
           message:
-            "Esta cuenta está suspendida",
+            "No tienes permisos de administrador",
         });
       }
 
-      failedLogins.delete(address);
-
-      /*
-       * Migrar contraseñas antiguas a scrypt
-       * después de un login correcto.
-       */
-      if (
-        user.password &&
-        !user.password.startsWith("scrypt:")
-      ) {
-        await fetch(
-          `${firebaseDatabaseUrl}/users/${encodeURIComponent(id)}.json`,
-          {
-            method: "PATCH",
-            headers: {
-              "content-type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              password:
-                hashPassword(password),
-            }),
-          }
-        );
-      }
-
-      req.session.userId = id;
-
-      return res.json({
-        user: publicUser(user, id),
-      });
-
+      next();
     } catch (error) {
       console.error(
-        "Login error:",
+        "Admin check error:",
         error
       );
 
       return res.status(503).json({
         message:
-          "El servidor no está disponible",
+          "No se pudieron comprobar los permisos",
       });
     }
-  });
+  };
 
-  app.post("/api/auth/register", async (req, res) => {
-    const name = String(
-      req.body?.name || ""
-    ).trim();
+  /*
+   * ==========================================================
+   * AUTH — LOGIN
+   * ==========================================================
+   */
 
-    const password = String(
-      req.body?.password || ""
-    );
+  app.post(
+    "/api/auth/login",
+    async (req, res) => {
+      const name = cleanText(
+        req.body?.name,
+        120
+      );
 
-    if (
-      name.length < 2 ||
-      password.length < 1
-    ) {
-      return res.status(400).json({
-        message:
-          "Nombre y contraseña son requeridos",
-      });
-    }
+      const password = String(
+        req.body?.password || ""
+      );
 
-    if (
-      [
-        "leo33445",
-        "theowner",
-        "owner",
-      ].includes(name.toLowerCase())
-    ) {
-      return res.status(409).json({
-        message:
-          "Este nombre está reservado y no puede ser usado",
-      });
-    }
+      const address =
+        req.ip || "unknown";
 
-    try {
-      const users =
-        await readFirebaseUsers();
+      const attempt =
+        failedLogins.get(address);
 
-      const alreadyTaken =
-        Object.values(users).some(
-          (user) => {
-            const candidateName =
-              user.originalName ||
-              user.name ||
-              "";
-
-            return (
-              candidateName.toLowerCase() ===
-              name.toLowerCase()
-            );
-          }
-        );
-
-      if (alreadyTaken) {
-        return res.status(409).json({
+      if (
+        attempt &&
+        attempt.resetAt > Date.now() &&
+        attempt.count >= 7
+      ) {
+        return res.status(429).json({
           message:
-            "Este nombre ya está en uso. Por favor, elige otro.",
+            "Demasiados intentos. Espera unos minutos.",
         });
       }
 
-      let id = "";
+      if (!name || !password) {
+        return res.status(400).json({
+          message:
+            "Nombre y contraseña son requeridos",
+        });
+      }
 
-      do {
-        id = String(
-          crypto.randomInt(
-            10000000,
-            100000000
+      try {
+        const users =
+          await readFirebaseUsers();
+
+        const entry =
+          Object.entries(users).find(
+            ([id, user]) => {
+              const candidateName =
+                user.originalName ||
+                user.name ||
+                id;
+
+              return (
+                candidateName.toLowerCase() ===
+                  name.toLowerCase() ||
+                id === name
+              );
+            }
+          );
+
+        if (
+          !entry ||
+          !passwordMatches(
+            password,
+            entry[1].password
           )
-        );
-      } while (users[id]);
+        ) {
+          const current =
+            failedLogins.get(address);
 
-      const user: FirebaseUser = {
-        id,
-        name,
-        originalName: name,
-        password:
-          hashPassword(password),
-        language:
+          failedLogins.set(address, {
+            count:
+              current &&
+              current.resetAt > Date.now()
+                ? current.count + 1
+                : 1,
+            resetAt:
+              Date.now() +
+              3 * 60 * 1000,
+          });
+
+          return res.status(401).json({
+            message:
+              "Usuario o contraseña incorrectos",
+          });
+        }
+
+        const [id, user] = entry;
+
+        if (user.banned) {
+          return res.status(403).json({
+            message:
+              "Esta cuenta está suspendida",
+          });
+        }
+
+        failedLogins.delete(address);
+
+        /*
+         * Migración automática de contraseña
+         * antigua a scrypt.
+         */
+        if (
+          user.password &&
+          !user.password.startsWith(
+            "scrypt:"
+          )
+        ) {
+          await writeFirebase(
+            `users/${id}`,
+            "PATCH",
+            {
+              password:
+                hashPassword(password),
+            }
+          );
+        }
+
+        req.session.userId = id;
+
+        return res.json({
+          user: publicUser(user, id),
+        });
+      } catch (error) {
+        console.error(
+          "Login error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "El servidor no está disponible",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * AUTH — REGISTER
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/auth/register",
+    async (req, res) => {
+      const name = cleanText(
+        req.body?.name,
+        80
+      );
+
+      const password = String(
+        req.body?.password || ""
+      );
+
+      if (
+        name.length < 2 ||
+        password.length < 1
+      ) {
+        return res.status(400).json({
+          message:
+            "Nombre y contraseña son requeridos",
+        });
+      }
+
+      if (
+        name.length > 40
+      ) {
+        return res.status(400).json({
+          message:
+            "El nombre es demasiado largo",
+        });
+      }
+
+      if (
+        [
+          "leo33445",
+          "theowner",
+          "owner",
+        ].includes(
+          name.toLowerCase()
+        )
+      ) {
+        return res.status(409).json({
+          message:
+            "Este nombre está reservado y no puede ser usado",
+        });
+      }
+
+      try {
+        const users =
+          await readFirebaseUsers();
+
+        const alreadyTaken =
+          Object.values(users).some(
+            (user) => {
+              const candidateName =
+                user.originalName ||
+                user.name ||
+                "";
+
+              return (
+                candidateName.toLowerCase() ===
+                name.toLowerCase()
+              );
+            }
+          );
+
+        if (alreadyTaken) {
+          return res.status(409).json({
+            message:
+              "Este nombre ya está en uso. Por favor, elige otro.",
+          });
+        }
+
+        let id = "";
+
+        do {
+          id = String(
+            crypto.randomInt(
+              10000000,
+              100000000
+            )
+          );
+        } while (users[id]);
+
+        const language =
           String(
             req.body?.language || ""
           ).startsWith("es")
             ? "es"
-            : "en",
-        avatar:
+            : "en";
+
+        const avatar =
           typeof req.body?.avatar ===
           "string"
-            ? req.body.avatar
-            : undefined,
-      };
+            ? req.body.avatar.slice(
+                0,
+                500000
+              )
+            : undefined;
 
-      const response =
-        await fetch(
-          `${firebaseDatabaseUrl}/users/${id}.json`,
-          {
-            method: "PUT",
-            headers: {
-              "content-type":
-                "application/json",
-            },
-            body: JSON.stringify(user),
-          }
+        const user: FirebaseUser = {
+          id,
+          name,
+          originalName: name,
+          password:
+            hashPassword(password),
+          language,
+          avatar,
+        };
+
+        await writeFirebase(
+          `users/${id}`,
+          "PUT",
+          user
         );
 
-      if (!response.ok) {
-        throw new Error(
-          "No se pudo crear la cuenta"
+        req.session.userId = id;
+
+        return res.status(201).json({
+          user: publicUser(user, id),
+        });
+      } catch (error) {
+        console.error(
+          "Registration error:",
+          error
         );
+
+        return res.status(503).json({
+          message:
+            "No se pudo crear la cuenta",
+        });
       }
-
-      req.session.userId = id;
-
-      return res.status(201).json({
-        user: publicUser(user, id),
-      });
-
-    } catch (error) {
-      console.error(
-        "Registration error:",
-        error
-      );
-
-      return res.status(503).json({
-        message:
-          "No se pudo crear la cuenta",
-      });
     }
-  });
+  );
 
-  app.get("/api/auth/me", async (req, res) => {
-    const userId = req.session.userId;
+  /*
+   * ==========================================================
+   * AUTH — CURRENT USER
+   * ==========================================================
+   */
 
-    if (!userId) {
-      return res.status(401).json({
-        authenticated: false,
-      });
-    }
+  app.get(
+    "/api/auth/me",
+    async (req, res) => {
+      const userId =
+        req.session.userId;
 
-    try {
-      const user =
-        await readFirebaseUser(userId);
-
-      if (!user) {
-        req.session.destroy(() => {});
-
+      if (!userId) {
         return res.status(401).json({
           authenticated: false,
         });
       }
 
-      return res.json({
-        authenticated: true,
-        userId,
-        user: publicUser(
-          user,
-          userId
-        ),
-      });
+      try {
+        const user =
+          await readFirebaseUser(
+            userId
+          );
 
-    } catch (error) {
-      console.error(
-        "Auth session error:",
-        error
-      );
+        if (!user) {
+          req.session.destroy(() => {});
 
-      return res.status(503).json({
-        message:
-          "No se pudo comprobar la sesión",
-      });
+          return res.status(401).json({
+            authenticated: false,
+          });
+        }
+
+        if (user.banned) {
+          req.session.destroy(() => {});
+
+          return res.status(403).json({
+            authenticated: false,
+            message:
+              "Esta cuenta está suspendida",
+          });
+        }
+
+        return res.json({
+          authenticated: true,
+          userId,
+          user: publicUser(
+            user,
+            userId
+          ),
+        });
+      } catch (error) {
+        console.error(
+          "Auth session error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo comprobar la sesión",
+        });
+      }
     }
-  });
-
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy(() => {
-      res.status(204).end();
-    });
-  });
+  );
 
   /*
-   * ============================================================
-   * CHANGE PASSWORD
-   * ============================================================
+   * ==========================================================
+   * AUTH — LOGOUT
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/auth/logout",
+    (req, res) => {
+      req.session.destroy(() => {
+        res.status(204).end();
+      });
+    }
+  );
+
+  /*
+   * ==========================================================
+   * AUTH — VERIFY PASSWORD
+   * ==========================================================
+   */
+
+  app.post(
+    "/api/auth/verify-password",
+    requireAuth,
+    async (req, res) => {
+      const password = String(
+        req.body?.password || ""
+      );
+
+      if (!password) {
+        return res.status(400).json({
+          message:
+            "Contraseña requerida",
+        });
+      }
+
+      try {
+        const user =
+          await readFirebaseUser(
+            req.session.userId!
+          );
+
+        if (
+          !user ||
+          !passwordMatches(
+            password,
+            user.password
+          )
+        ) {
+          return res.status(403).json({
+            valid: false,
+          });
+        }
+
+        return res.json({
+          valid: true,
+        });
+      } catch (error) {
+        console.error(
+          "Verify password error:",
+          error
+        );
+
+        return res.status(503).json({
+          message:
+            "No se pudo verificar la contraseña",
+        });
+      }
+    }
+  );
+
+  /*
+   * ==========================================================
+   * AUTH — CHANGE PASSWORD
+   * ==========================================================
    */
 
   app.post(
     "/api/auth/change-password",
     requireAuth,
     async (req, res) => {
-
-      const userId =
-        req.session.userId!;
-
       const currentPassword =
         String(
           req.body?.currentPassword ||
@@ -511,557 +978,4 @@ export async function registerRoutes(
       ) {
         return res.status(400).json({
           message:
-            "La nueva contraseña debe tener al menos 8 caracteres",
-        });
-      }
-
-      try {
-        const user =
-          await readFirebaseUser(
-            userId
-          );
-
-        if (
-          !user ||
-          !passwordMatches(
-            currentPassword,
-            user.password
-          )
-        ) {
-          return res.status(403).json({
-            message:
-              "La contraseña actual es incorrecta",
-          });
-        }
-
-        const response =
-          await fetch(
-            `${firebaseDatabaseUrl}/users/${encodeURIComponent(userId)}.json`,
-            {
-              method: "PATCH",
-              headers: {
-                "content-type":
-                  "application/json",
-              },
-              body: JSON.stringify({
-                password:
-                  hashPassword(
-                    newPassword
-                  ),
-              }),
-            }
-          );
-
-        if (!response.ok) {
-          throw new Error(
-            "No se pudo cambiar la contraseña"
-          );
-        }
-
-        return res
-          .status(204)
-          .end();
-
-      } catch (error) {
-        console.error(
-          "Password change error:",
-          error
-        );
-
-        return res.status(503).json({
-          message:
-            "No se pudo cambiar la contraseña",
-        });
-      }
-    }
-  );
-
-  /*
-   * ============================================================
-   * USER LOOKUP
-   * ============================================================
-   */
-
-  app.get(
-    "/api/users/:id",
-    requireAuth,
-    async (req, res) => {
-
-      const id = String(
-        req.params.id || ""
-      ).trim();
-
-      if (!/^\d{8}$/.test(id)) {
-        return res.status(400).json({
-          message:
-            "ID de usuario inválido",
-        });
-      }
-
-      try {
-        const user =
-          await readFirebaseUser(id);
-
-        if (!user) {
-          return res.status(404).json({
-            message:
-              "Usuario no encontrado",
-          });
-        }
-
-        return res.json({
-          user: publicUser(
-            user,
-            id
-          ),
-        });
-
-      } catch (error) {
-        console.error(
-          "User lookup error:",
-          error
-        );
-
-        return res.status(503).json({
-          message:
-            "No se pudo consultar el usuario",
-        });
-      }
-    }
-  );
-
-  app.get(
-    "/api/users",
-    requireAuth,
-    async (req, res) => {
-
-      const search = String(
-        req.query.search || ""
-      )
-        .trim()
-        .toLowerCase();
-
-      if (search.length > 80) {
-        return res.status(400).json({
-          message:
-            "Búsqueda demasiado larga",
-        });
-      }
-
-      try {
-        const users =
-          await readFirebaseUsers();
-
-        const result =
-          Object.entries(users)
-            .filter(
-              ([id, user]) => {
-                if (!search)
-                  return true;
-
-                const name =
-                  (
-                    user.name || ""
-                  ).toLowerCase();
-
-                const originalName =
-                  (
-                    user.originalName ||
-                    ""
-                  ).toLowerCase();
-
-                return (
-                  id.includes(search) ||
-                  name.includes(search) ||
-                  originalName.includes(
-                    search
-                  )
-                );
-              }
-            )
-            .slice(0, 50)
-            .map(
-              ([id, user]) =>
-                publicUser(
-                  user,
-                  id
-                )
-            );
-
-        return res.json({
-          users: result,
-        });
-
-      } catch (error) {
-        console.error(
-          "User search error:",
-          error
-        );
-
-        return res.status(503).json({
-          message:
-            "No se pudieron consultar los usuarios",
-        });
-      }
-    }
-  );
-
-  /*
-   * ============================================================
-   * UPDATE OWN PROFILE
-   * ============================================================
-   *
-   * IMPORTANTE:
-   * El ID, originalName, password, banned,
-   * punishedUntil y googleLinked NO pueden modificarse
-   * mediante este endpoint.
-   */
-
-  app.patch(
-    "/api/auth/me",
-    requireAuth,
-    async (req, res) => {
-
-      const userId =
-        req.session.userId!;
-
-      const updates: Record<
-        string,
-        unknown
-      > = {};
-
-      if (
-        typeof req.body?.name ===
-        "string"
-      ) {
-        const name =
-          req.body.name
-            .trim()
-            .slice(0, 40);
-
-        if (name.length >= 2) {
-          updates.name = name;
-        }
-      }
-
-      if (
-        typeof req.body?.avatar ===
-        "string"
-      ) {
-        updates.avatar =
-          req.body.avatar.slice(
-            0,
-            500000
-          );
-      }
-
-      if (
-        req.body?.language === "es" ||
-        req.body?.language === "en"
-      ) {
-        updates.language =
-          req.body.language;
-      }
-
-      if (
-        Object.keys(updates)
-          .length === 0
-      ) {
-        return res.status(400).json({
-          message:
-            "No hay campos de perfil válidos para actualizar",
-        });
-      }
-
-      try {
-        const response =
-          await fetch(
-            `${firebaseDatabaseUrl}/users/${encodeURIComponent(userId)}.json`,
-            {
-              method: "PATCH",
-              headers: {
-                "content-type":
-                  "application/json",
-              },
-              body: JSON.stringify(
-                updates
-              ),
-            }
-          );
-
-        if (!response.ok) {
-          throw new Error(
-            "No se pudo actualizar el perfil"
-          );
-        }
-
-        const user =
-          await readFirebaseUser(
-            userId
-          );
-
-        if (!user) {
-          return res.status(404).json({
-            message:
-              "Usuario no encontrado",
-          });
-        }
-
-        return res.json({
-          user: publicUser(
-            user,
-            userId
-          ),
-        });
-
-      } catch (error) {
-        console.error(
-          "Profile update error:",
-          error
-        );
-
-        return res.status(503).json({
-          message:
-            "No se pudo actualizar el perfil",
-        });
-      }
-    }
-  );
-
-  /*
-   * ============================================================
-   * MESSAGES
-   * ============================================================
-   *
-   * El senderId SIEMPRE sale de la sesión.
-   * El cliente no puede elegir otro usuario como remitente.
-   */
-
-  app.post(
-    "/api/messages",
-    requireAuth,
-    async (req, res) => {
-
-      const senderId =
-        req.session.userId!;
-
-      const recipientId =
-        String(
-          req.body?.recipientId ||
-            ""
-        ).trim();
-
-      const text =
-        String(
-          req.body?.text || ""
-        ).trim();
-
-      if (
-        !/^\d{8}$/.test(
-          recipientId
-        )
-      ) {
-        return res.status(400).json({
-          message:
-            "Destinatario inválido",
-        });
-      }
-
-      if (
-        !text ||
-        text.length > 5000
-      ) {
-        return res.status(400).json({
-          message:
-            "Mensaje inválido",
-        });
-      }
-
-      if (
-        recipientId === senderId
-      ) {
-        return res.status(400).json({
-          message:
-            "No puedes enviarte un mensaje a ti mismo",
-        });
-      }
-
-      try {
-        const recipient =
-          await readFirebaseUser(
-            recipientId
-          );
-
-        if (!recipient) {
-          return res.status(404).json({
-            message:
-              "Destinatario no encontrado",
-          });
-        }
-
-        if (recipient.banned) {
-          return res.status(403).json({
-            message:
-              "No puedes enviar mensajes a esta cuenta",
-          });
-        }
-
-        const message = {
-          senderId,
-          recipientId,
-          text,
-          timestamp: Date.now(),
-        };
-
-        const response =
-          await fetch(
-            `${firebaseDatabaseUrl}/offline_messages/${encodeURIComponent(recipientId)}.json`,
-            {
-              method: "POST",
-              headers: {
-                "content-type":
-                  "application/json",
-              },
-              body: JSON.stringify(
-                message
-              ),
-            }
-          );
-
-        if (!response.ok) {
-          throw new Error(
-            "No se pudo guardar el mensaje"
-          );
-        }
-
-        return res.status(201).json({
-          message,
-        });
-
-      } catch (error) {
-        console.error(
-          "Message send error:",
-          error
-        );
-
-        return res.status(503).json({
-          message:
-            "No se pudo enviar el mensaje",
-        });
-      }
-    }
-  );
-
-  /*
-   * ============================================================
-   * FILE UPLOADS
-   * ============================================================
-   */
-
-  app.post(
-    "/api/uploads",
-    requireAuth,
-    async (req, res) => {
-
-      const dataUrl =
-        String(
-          req.body?.dataUrl || ""
-        );
-
-      const fileName =
-        String(
-          req.body?.fileName ||
-            "archivo"
-        );
-
-      const mimeType =
-        String(
-          req.body?.mimeType ||
-            "application/octet-stream"
-        );
-
-      const match =
-        dataUrl.match(
-          /^data:[^;]+;base64,(.+)$/
-        );
-
-      if (!match) {
-        return res.status(400).json({
-          message:
-            "Archivo inválido",
-        });
-      }
-
-      try {
-        const content =
-          Buffer.from(
-            match[1],
-            "base64"
-          );
-
-        if (
-          content.length >
-          40 * 1024 * 1024
-        ) {
-          return res.status(413).json({
-            message:
-              "El archivo supera el límite de 40 MB",
-          });
-        }
-
-        await fs.mkdir(
-          uploadDirectory,
-          {
-            recursive: true,
-          }
-        );
-
-        const extension =
-          path
-            .extname(fileName)
-            .replace(
-              /[^a-zA-Z0-9.]/g,
-              ""
-            )
-            .slice(0, 12);
-
-        const storedName =
-          `${crypto.randomUUID()}${extension}`;
-
-        await fs.writeFile(
-          path.join(
-            uploadDirectory,
-            storedName
-          ),
-          content
-        );
-
-        return res.status(201).json({
-          url:
-            `/uploads/${storedName}`,
-          fileName:
-            fileName.slice(
-              0,
-              180
-            ),
-          mimeType,
-          size:
-            content.length,
-        });
-
-      } catch (error) {
-        console.error(
-          "Upload error:",
-          error
-        );
-
-        return res.status(500).json({
-          message:
-            "No se pudo guardar el archivo",
-        });
-      }
-    }
-  );
-
-  return httpServer;
-}
+            "La nueva co
