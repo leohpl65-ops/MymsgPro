@@ -1045,13 +1045,11 @@ export function AddFriendModal({
       }
 
       try {
-        const { get, ref } = await import("firebase/database");
-        const { db } = await import("@/lib/firebase");
+        const response = await fetch(`/api/users/${encodeURIComponent(cleanFriendId)}`);
+        const result = await response.json().catch(() => ({}));
 
-        const userSnap = await get(ref(db, `users/${cleanFriendId}`));
-
-        if (userSnap.exists()) {
-          const user = userSnap.val();
+        if (response.ok && result.user) {
+          const user = result.user;
           setFoundUser({
             name: user.originalName || user.name || `Usuario ${cleanFriendId}`,
             inApp: true,
@@ -1079,18 +1077,27 @@ export function AddFriendModal({
       return;
     }
 
-    // Check Firebase for the user
+    // Resolve and add contacts through the server so the response is
+    // explicitly sanitized and the relationship is scoped to this session.
     try {
-      const { get, ref } = await import("firebase/database");
-      const { db } = await import("@/lib/firebase");
+      const userResponse = await fetch(`/api/users/${encodeURIComponent(cleanFriendId)}`);
+      const userResult = await userResponse.json().catch(() => ({}));
 
-      const userSnap = await get(ref(db, `users/${cleanFriendId}`));
-
-      if (userSnap.exists()) {
-        const user = userSnap.val();
+      if (userResponse.ok && userResult.user) {
+        const user = userResult.user;
         // user.originalName is the permanent username chosen at registration
         const displayName =
           user.originalName || user.name || `Usuario ${cleanFriendId}`;
+        const contactResponse = await fetch("/api/contacts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contactId: cleanFriendId }),
+        });
+        const contactResult = await contactResponse.json().catch(() => ({}));
+        if (!contactResponse.ok) {
+          setError(contactResult.message || "No se pudo agregar el contacto");
+          return;
+        }
         const success = addContact(cleanFriendId, displayName);
 
         if (success) {
