@@ -7,13 +7,15 @@ import session from "express-session";
 const app = express();
 const httpServer = createServer(app);
 
-// Vercel/Reverse proxy
+// Vercel / Reverse proxy
 app.set("trust proxy", 1);
 
 const sessionSecret = process.env.SESSION_SECRET;
 
 if (!sessionSecret) {
-  throw new Error("SESSION_SECRET must be configured before starting the server");
+  throw new Error(
+    "SESSION_SECRET must be configured before starting the server",
+  );
 }
 
 declare module "http" {
@@ -64,6 +66,7 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+// API request logger
 app.use((req, res, next) => {
   const start = Date.now();
   const requestPath = req.path;
@@ -97,6 +100,7 @@ app.use((req, res, next) => {
 export const ready = (async () => {
   await registerRoutes(httpServer, app);
 
+  // Error handler
   app.use(
     (
       err: any,
@@ -112,20 +116,32 @@ export const ready = (async () => {
     },
   );
 
-  // En producción servimos el frontend.
-  // En desarrollo usamos Vite.
-  if (process.env.NODE_ENV === "production") {
+  /*
+   * VERCEL
+   *
+   * En Vercel, Express funciona como una Serverless Function.
+   * Vercel se encarga de servir los archivos estáticos del frontend,
+   * por lo que NO debemos ejecutar serveStatic() dentro de la función
+   * /api.
+   */
+  if (process.env.VERCEL) {
+    // No servir el frontend desde Express en Vercel.
+  } else if (process.env.NODE_ENV === "production") {
+    // Producción fuera de Vercel.
     serveStatic(app);
   } else {
+    // Desarrollo local.
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
 
-  // Vercel ejecuta Express como función y NO necesita
-  // que llamemos a httpServer.listen().
-  //
-  // Cuando ejecutamos el proyecto localmente, sí necesitamos
-  // abrir el puerto 5000.
+  /*
+   * Vercel ejecuta Express como función y NO necesita
+   * que llamemos a httpServer.listen().
+   *
+   * Cuando ejecutamos el proyecto localmente,
+   * sí necesitamos abrir el puerto 5000.
+   */
   if (!process.env.VERCEL) {
     const port = parseInt(process.env.PORT || "5000", 10);
 
